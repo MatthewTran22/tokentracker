@@ -64,19 +64,23 @@ Restart Claude Code. Events flow within ~5s.
 
 Vercel is supported via the `api/index.py` entry point and `vercel.json` at the repo root.
 
-**One-time setup:**
-1. **Pick a Postgres host with a transaction-mode pooler**. Serverless fan-out will otherwise exhaust `max_connections`. Recommended: Supabase (use the `*-pooler.supabase.com` connection string), Neon (use the `-pooler` host), or Vercel Postgres.
-2. Run `sql/001_init.sql` against the production DB (once) — Vercel doesn't run Docker init scripts.
+**One-time setup (Neon as the Postgres host):**
+1. Create a Neon project at console.neon.tech → copy the **pooled** connection string (hostname contains `-pooler`, e.g. `ep-xxx-pooler.us-east-1.aws.neon.tech`). Do not use the direct endpoint — serverless fan-out will blow through connection limits.
+2. In Neon's SQL Editor, paste and run the contents of `sql/001_init.sql`.
 3. In the Vercel project dashboard → Settings → Environment Variables, set:
    ```
-   DATABASE_URL    = <your pooler connection string>
-   AUTH_SECRET     = <openssl rand -hex 32>
-   COOKIE_SECURE   = 1
-   TRUST_PROXY     = 1
-   DB_POOL_MAX     = 1
+   DATABASE_URL         = <your Neon pooled connection string with ?sslmode=require>
+   AUTH_SECRET          = <openssl rand -hex 32>
+   COOKIE_SECURE        = 1
+   TRUST_PROXY          = 1
+   DB_POOL_MAX          = 1
+   DB_DISABLE_PREPARE   = 1
    ```
+   `DB_DISABLE_PREPARE=1` is **mandatory** on Neon's pooled endpoint — it uses pgbouncer in transaction mode, which breaks psycopg3's default prepared-statement caching.
 4. **Enable "Deployment Protection"** on preview deployments (Vercel → Project → Settings → Deployment Protection → Vercel Authentication). Previews shouldn't be publicly accessible with a shared `AUTH_SECRET`.
 5. Deploy: `vercel deploy --prod` or push to main.
+
+Supabase works too — swap in its `*-pooler.supabase.com:6543` URL and keep `DB_DISABLE_PREPARE=1` (same pgbouncer constraint).
 
 **Caveats of running on Vercel:**
 - The OTLP ingest endpoint incurs one serverless invocation per Claude Code export (every ~5s per active session). Watch your invocation budget; for heavy use a VPS is cheaper.

@@ -4,442 +4,812 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:,">
-<title>tokentracker</title>
+<title>Global Token Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root {
-    color-scheme: dark;
-    --bg: #0b0d12;
-    --panel: #10141b;
-    --fg: #e7ecf3;
-    --muted: #6b7280;
-    --muted-2: #9aa3b2;
-    --border: #2a2f3a;
-    --accent: #7cdcaf;
-    --danger: #ff6b6b;
-    --warn: #cb8f2e;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    background: var(--bg);
-    color: var(--fg);
-    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    min-height: 100%;
-  }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: #0c1016;
-    padding: 0.1rem 0.35rem;
-    border-radius: 4px;
-    font-size: 0.88em;
-  }
+:root {
+  --bg: #050807;
+  --bg-1: #0c1512;
+  --card: rgba(16, 22, 19, 0.82);
+  --card-border: rgba(74, 222, 128, 0.08);
+  --card-border-hover: rgba(74, 222, 128, 0.25);
+  --ink: #e6f0ea;
+  --ink-dim: #8ba096;
+  --ink-dimmer: #5c6f68;
+  --green: #4ade80;
+  --green-dim: #22c55e;
+  --green-glow: rgba(74, 222, 128, 0.4);
+  --danger: #ff6b6b;
+  --warn: #f3c87c;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --sans: "Inter", system-ui, -apple-system, sans-serif;
+}
 
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.1rem 1.75rem;
-    border-bottom: 1px solid var(--border);
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-  .brand {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-weight: 600;
-    font-size: 1rem;
-    cursor: pointer;
-    user-select: none;
-  }
-  .brand::before { content: "▲ "; color: var(--accent); }
-  nav { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-  nav a, nav button {
-    padding: 0.5rem 0.95rem;
-    border-radius: 999px;
-    border: 1px solid transparent;
-    color: var(--muted);
-    font-family: inherit;
-    font-size: 0.88rem;
-    cursor: pointer;
-    background: transparent;
-    transition: color 0.15s, border-color 0.15s, background 0.15s;
-    text-decoration: none;
-  }
-  nav a:hover, nav button:hover { color: var(--fg); text-decoration: none; }
-  nav a.active { color: var(--fg); border-color: var(--border); }
-  nav a.cta {
-    background: var(--accent);
-    color: #0b0d12;
-    font-weight: 600;
-  }
-  nav a.cta:hover { color: #0b0d12; }
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+a { color: var(--green); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: rgba(74, 222, 128, 0.07);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  color: var(--ink);
+}
 
-  main { padding: 2rem 1.75rem 4rem; display: grid; place-items: start center; }
-  .page { width: min(980px, 100%); }
-  .label {
-    font-size: 0.78rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-  }
-  .hidden { display: none !important; }
+/* ============ DATA CENTER BACKDROP ============ */
+.datacenter-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: radial-gradient(ellipse 80% 60% at 50% 50%, #0d1613 0%, #050807 70%, #020403 100%);
+}
+.dc-floor {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 300%;
+  height: 45%;
+  transform: translateX(-50%) perspective(800px) rotateX(62deg);
+  transform-origin: bottom center;
+  background-image:
+    linear-gradient(to right, rgba(74, 222, 128, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(74, 222, 128, 0.06) 1px, transparent 1px);
+  background-size: 80px 80px;
+  opacity: 0.5;
+  mask-image: linear-gradient(to top, black 20%, transparent 95%);
+  -webkit-mask-image: linear-gradient(to top, black 20%, transparent 95%);
+}
+.dc-ceiling {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 300%;
+  height: 25%;
+  transform: translateX(-50%) perspective(1200px) rotateX(-65deg);
+  transform-origin: top center;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 120px 120px;
+  opacity: 0.35;
+  mask-image: linear-gradient(to bottom, black 10%, transparent 95%);
+  -webkit-mask-image: linear-gradient(to bottom, black 10%, transparent 95%);
+}
+.dc-wall {
+  position: absolute;
+  top: 12%;
+  bottom: 15%;
+  width: 38%;
+  pointer-events: none;
+}
+.dc-wall.left  { left: -2%;  transform: perspective(1200px) rotateY(28deg);  transform-origin: right center; }
+.dc-wall.right { right: -2%; transform: perspective(1200px) rotateY(-28deg); transform-origin: left center; }
+.dc-rack-col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dc-rack {
+  flex: 1;
+  min-height: 60px;
+  background: linear-gradient(180deg, #1a211e 0%, #0e1512 50%, #060908 100%);
+  border: 1px solid rgba(74, 222, 128, 0.04);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), inset 0 0 20px rgba(0,0,0,0.6);
+}
+.dc-rack::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 6px,
+    rgba(0, 0, 0, 0.5) 6px 7px,
+    transparent 7px 13px,
+    rgba(255, 255, 255, 0.02) 13px 14px
+  );
+  opacity: 0.7;
+}
+.dc-rack::after {
+  content: "";
+  position: absolute;
+  right: 6px; top: 10px; bottom: 10px;
+  width: 3px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--green) 0 2px,
+    transparent 2px 14px,
+    rgba(74, 222, 128, 0.3) 14px 16px,
+    transparent 16px 28px
+  );
+  box-shadow: 0 0 6px var(--green-glow);
+  opacity: 0.6;
+  animation: dcFlicker 4s ease-in-out infinite;
+}
+@keyframes dcFlicker {
+  0%, 100% { opacity: 0.6; }
+  20% { opacity: 0.3; } 22% { opacity: 0.6; }
+  40% { opacity: 0.5; } 80% { opacity: 0.7; }
+}
+.dc-cables {
+  position: absolute;
+  top: 8%; left: 10%; right: 10%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(74, 222, 128, 0.15), transparent);
+  box-shadow: 0 2px 8px rgba(74, 222, 128, 0.15);
+}
+.dc-pipe {
+  position: absolute;
+  left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(180deg, #2a3430 0%, #0e1512 100%);
+  border-top: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(0,0,0,0.8);
+}
+.dc-pipe.p1 { top: 4%; }
+.dc-pipe.p2 { top: 7%; opacity: 0.6; }
+.dc-haze {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 60%, transparent 0%, rgba(5, 8, 7, 0.5) 50%, rgba(5, 8, 7, 0.9) 100%),
+    radial-gradient(ellipse 40% 30% at 50% 45%, rgba(74, 222, 128, 0.04) 0%, transparent 70%);
+  pointer-events: none;
+}
+.dc-noise {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.6  0 0 0 0 0.8  0 0 0 0 0.7  0 0 0 0.25 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+}
+.dc-sweep {
+  position: absolute;
+  top: 10%; bottom: 15%;
+  width: 300px;
+  background: linear-gradient(90deg, transparent 0%, rgba(74,222,128,0.04) 45%, rgba(74,222,128,0.08) 50%, rgba(74,222,128,0.04) 55%, transparent 100%);
+  animation: dcSweep 18s linear infinite;
+  pointer-events: none;
+  filter: blur(20px);
+}
+@keyframes dcSweep { from { left: -10%; } to { left: 110%; } }
 
-  .hero { text-align: center; padding: 2.5rem 0 2rem; }
-  h1 {
-    font-size: clamp(2rem, 5vw, 3.2rem);
-    line-height: 1.1;
-    margin: 0 0 0.75rem;
-    letter-spacing: -0.01em;
-  }
-  .tag { color: var(--muted-2); font-size: 1.05rem; max-width: 42rem; margin: 0 auto 2rem; }
-  .big {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: clamp(3.5rem, 12vw, 8rem);
-    font-weight: 600;
-    line-height: 1;
-    margin: 0.5rem 0 2rem;
-    color: var(--accent);
-    font-variant-numeric: tabular-nums;
-  }
-  .stats { display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; }
-  .stat .n {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 1.5rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .stat .l {
-    font-size: 0.7rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    margin-top: 0.35rem;
-  }
-  .status { margin-top: 2.5rem; text-align: center; font-size: 0.85rem; color: var(--muted); }
+/* ============ CONTENT LAYER ============ */
+.content {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+}
 
-  .ctas { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-top: 1rem; }
-  .btn {
-    padding: 0.8rem 1.4rem;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--fg);
-    font-family: inherit;
-    font-weight: 500;
-    font-size: 0.95rem;
-    cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
-  }
-  .btn:hover { border-color: var(--muted); }
-  .btn.primary { background: var(--accent); color: #0b0d12; border-color: var(--accent); font-weight: 600; }
-  .btn.primary:hover { filter: brightness(1.05); }
-  .btn.danger { border-color: var(--danger); color: var(--danger); }
-  .btn.danger:hover { background: rgba(255, 107, 107, 0.08); }
-  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+/* NAV */
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 48px;
+  gap: 1rem;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 2;
+}
+.logo {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+.logo .caret { color: var(--green); }
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.nav-link {
+  color: var(--ink-dim);
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+.nav-link:hover { color: var(--ink); text-decoration: none; }
+.nav-link.active {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.nav-link.cta {
+  background: var(--green);
+  color: #07130c;
+  font-weight: 600;
+  padding: 8px 20px;
+  box-shadow: 0 0 24px rgba(74, 222, 128, 0.3);
+  border-color: rgba(74, 222, 128, 0.5);
+}
+.nav-link.cta:hover { background: #6ee7a7; box-shadow: 0 0 32px rgba(74, 222, 128, 0.5); color: #07130c; }
 
-  .how { margin-top: 4rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
-  .how .card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.25rem;
-  }
-  .how .card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
-  .how .card p { margin: 0; color: var(--muted-2); font-size: 0.9rem; line-height: 1.5; }
+main { padding: 2rem 2rem 4rem; }
+.page { max-width: 1100px; margin: 0 auto; }
 
-  .form {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 2rem;
-    max-width: 460px;
-    margin: 2rem auto 0;
-    display: grid;
-    gap: 1rem;
-  }
-  .form h2 { margin: 0; font-size: 1.3rem; }
-  .form p.sub { margin: -0.5rem 0 0.5rem; color: var(--muted-2); font-size: 0.92rem; }
-  .form label { font-size: 0.8rem; color: var(--muted); }
-  .form input {
-    padding: 0.8rem 1rem;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: #0c1016;
-    color: var(--fg);
-    font-family: inherit;
-    font-size: 0.95rem;
-    width: 100%;
-  }
-  .form input[type="password"], .form input.mono { font-family: ui-monospace, monospace; }
-  .form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  .form .row { display: grid; gap: 0.3rem; }
-  .form .err { color: var(--danger); font-size: 0.9rem; min-height: 1.2em; }
-  .form .foot { font-size: 0.88rem; color: var(--muted-2); text-align: center; }
+/* HERO + NUMBERS */
+.hero {
+  max-width: 900px;
+  margin: 60px auto 0;
+  text-align: center;
+  padding: 0 16px;
+}
+h1.hero-title {
+  font-size: clamp(2rem, 5vw, 56px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  margin: 0 0 24px;
+  text-wrap: balance;
+  color: var(--ink);
+}
+.hero-sub {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--ink-dim);
+  line-height: 1.7;
+  max-width: 580px;
+  margin: 0 auto 44px;
+}
+.combined-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dimmer);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.combined-label::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green-glow);
+  animation: dotPulse 1.6s ease-in-out infinite;
+}
+@keyframes dotPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.hero-number {
+  font-family: var(--sans);
+  font-size: clamp(3.5rem, 12vw, 140px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--green);
+  text-shadow:
+    0 0 40px rgba(74, 222, 128, 0.45),
+    0 0 80px rgba(74, 222, 128, 0.2);
+  margin-bottom: 32px;
+  font-variant-numeric: tabular-nums;
+}
+.hero-number.sm { font-size: clamp(3rem, 10vw, 100px); }
 
-  .token-display {
-    font-family: ui-monospace, monospace;
-    font-size: 0.85rem;
-    background: #0c1016;
-    border: 1px solid var(--border);
-    padding: 0.9rem;
-    border-radius: 8px;
-    word-break: break-all;
-    user-select: all;
-  }
-  .warn {
-    border: 1px solid var(--warn);
-    background: rgba(203, 143, 46, 0.08);
-    padding: 0.9rem 1rem;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    color: #f3c87c;
-  }
+.stat-row {
+  display: flex;
+  gap: 3rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+.stat .n {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.stat .l {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dimmer);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin-top: 0.4rem;
+}
+.status-line {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dimmer);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-align: center;
+  margin-top: 24px;
+}
 
-  .board { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-  .board th, .board td {
-    padding: 0.85rem 1rem;
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-    font-variant-numeric: tabular-nums;
-  }
-  .board th {
-    font-size: 0.72rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    font-weight: 500;
-  }
-  .board td.num, .board th.num { text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .board tr.top td.rank { color: var(--accent); font-weight: 600; }
-  .board tr.me td { background: rgba(124, 220, 175, 0.06); }
-  .board td.rank { width: 3rem; color: var(--muted); }
-  .board td.handle { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* CTAs */
+.cta-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 64px;
+  flex-wrap: wrap;
+}
+.btn {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 12px 22px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 140ms ease;
+  border: 1px solid transparent;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  background: transparent;
+}
+.btn:hover { text-decoration: none; }
+.btn-primary {
+  background: var(--green);
+  color: #07130c;
+  font-weight: 600;
+  box-shadow: 0 0 24px rgba(74, 222, 128, 0.3);
+  border-color: rgba(74, 222, 128, 0.5);
+}
+.btn-primary:hover { background: #6ee7a7; box-shadow: 0 0 36px rgba(74, 222, 128, 0.5); transform: translateY(-1px); color: #07130c; }
+.btn-ghost {
+  background: rgba(20, 26, 23, 0.6);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.btn-ghost:hover { background: rgba(30, 40, 36, 0.8); border-color: rgba(74, 222, 128, 0.3); }
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+}
+.btn-danger:hover { background: rgba(255, 107, 107, 0.08); border-color: var(--danger); }
+.btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.btn.sm { padding: 8px 14px; font-size: 12px; }
 
-  .empty {
-    text-align: center;
-    color: var(--muted);
-    padding: 3rem 1rem;
-    font-size: 0.95rem;
-  }
+/* STEPS */
+.steps {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 16px 80px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.step {
+  padding: 24px 24px 26px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+.step:hover { border-color: var(--card-border-hover); transform: translateY(-2px); }
+.step-title { font-size: 14px; font-weight: 600; margin: 0 0 10px; letter-spacing: -0.005em; }
+.step-title .num { color: var(--green); margin-right: 4px; }
+.step-desc { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); line-height: 1.7; margin: 0; }
 
-  .me-hdr { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
-  .me-hdr .who { font-size: 1.1rem; }
-  .me-hdr .who .h { font-family: ui-monospace, monospace; color: var(--accent); }
-  .inline-form { display: flex; gap: 0.5rem; align-items: center; }
-  .inline-form input { width: 180px; padding: 0.55rem 0.8rem; font-size: 0.85rem; border-radius: 8px; border: 1px solid var(--border); background: #0c1016; color: var(--fg); font-family: ui-monospace, monospace; }
-  .inline-form .btn { padding: 0.55rem 0.9rem; font-size: 0.85rem; }
+/* CARD (forms, generic containers) */
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  padding: 2rem;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  max-width: 480px;
+  margin: 2rem auto;
+  display: grid;
+  gap: 1rem;
+}
+.card.wide { max-width: 720px; }
+.card h2 { margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; }
+.card .sub {
+  margin: -0.5rem 0 0.5rem;
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.card .row { display: grid; gap: 0.3rem; }
+.card .row label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dimmer);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.card input {
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(5, 8, 7, 0.7);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  width: 100%;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.card input:focus {
+  outline: none;
+  border-color: rgba(74, 222, 128, 0.5);
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.12);
+}
+.card .err { color: var(--danger); font-family: var(--mono); font-size: 12px; min-height: 1.2em; }
+.card .foot { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); text-align: center; }
 
-  .tokens-section {
-    margin-top: 3rem;
-    border-top: 1px solid var(--border);
-    padding-top: 2rem;
-  }
-  .tokens-section h3 { margin: 0 0 0.5rem; font-size: 1rem; }
-  .tokens-section p { margin: 0 0 1rem; color: var(--muted-2); font-size: 0.9rem; }
+.token-display {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: rgba(5, 8, 7, 0.7);
+  border: 1px solid rgba(74, 222, 128, 0.15);
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  word-break: break-all;
+  user-select: all;
+  color: var(--ink);
+  line-height: 1.6;
+}
+.warn-banner {
+  border: 1px solid rgba(243, 200, 124, 0.4);
+  background: rgba(243, 200, 124, 0.08);
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--warn);
+  line-height: 1.6;
+}
+
+/* Section labels */
+.label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dimmer);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+/* LEADERBOARD */
+.board-wrap {
+  max-width: 1000px;
+  margin: 2rem auto;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.board { width: 100%; border-collapse: collapse; }
+.board th, .board td {
+  padding: 0.95rem 1.1rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-variant-numeric: tabular-nums;
+}
+.board tr:last-child td { border-bottom: none; }
+.board th {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dimmer);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 500;
+  background: rgba(5, 8, 7, 0.5);
+}
+.board td.num, .board th.num { text-align: right; font-family: var(--mono); }
+.board tr.top td.rank { color: var(--green); font-weight: 700; }
+.board tr.me td { background: rgba(74, 222, 128, 0.05); }
+.board td.rank { width: 3rem; color: var(--ink-dimmer); font-family: var(--mono); }
+.board td.handle { font-family: var(--mono); color: var(--ink); }
+.empty {
+  text-align: center;
+  color: var(--ink-dimmer);
+  padding: 3rem 1rem;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* Dashboard header row */
+.me-hdr {
+  max-width: 900px;
+  margin: 1.5rem auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0 16px;
+}
+.me-hdr .who { font-family: var(--mono); font-size: 13px; color: var(--ink-dim); }
+.me-hdr .who .h { color: var(--green); font-weight: 600; }
+.inline-form { display: flex; gap: 0.5rem; align-items: center; }
+.inline-form input {
+  width: 180px;
+  padding: 0.55rem 0.8rem;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(5, 8, 7, 0.7);
+  color: var(--ink);
+  font-family: var(--mono);
+}
+.inline-form input:focus { outline: none; border-color: rgba(74, 222, 128, 0.5); box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.12); }
+
+.tokens-section {
+  max-width: 720px;
+  margin: 3rem auto 0;
+  padding: 2rem;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.tokens-section h3 { margin: 0 0 0.5rem; font-size: 14px; font-weight: 600; }
+.tokens-section p { margin: 0 0 1rem; font-family: var(--mono); font-size: 12px; color: var(--ink-dim); line-height: 1.6; }
+
+.disclaimer {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dimmer);
+  letter-spacing: 0.04em;
+  line-height: 1.7;
+  max-width: 540px;
+  margin: 28px auto 0;
+  padding: 10px 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  background: rgba(5, 8, 7, 0.35);
+}
+
+.hidden { display: none !important; }
+
+@media (max-width: 640px) {
+  .nav { padding: 16px 20px; }
+  main { padding: 1rem 1rem 3rem; }
+}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="brand" id="brand">tokentracker</div>
-  <nav id="nav"></nav>
-</header>
+<!-- DATA CENTER BACKDROP -->
+<div class="datacenter-bg" aria-hidden="true">
+  <div class="dc-ceiling"></div>
+  <div class="dc-pipe p1"></div>
+  <div class="dc-pipe p2"></div>
+  <div class="dc-cables"></div>
+  <div class="dc-wall left">
+    <div class="dc-rack-col" style="left: 0%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+    <div class="dc-rack-col" style="left: 20%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+    <div class="dc-rack-col" style="left: 40%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+    <div class="dc-rack-col" style="left: 60%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+    <div class="dc-rack-col" style="left: 80%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+  </div>
+  <div class="dc-wall right">
+    <div class="dc-rack-col" style="left: 0%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+    <div class="dc-rack-col" style="left: 20%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+    <div class="dc-rack-col" style="left: 40%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+    <div class="dc-rack-col" style="left: 60%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+    <div class="dc-rack-col" style="left: 80%; width: 18%;"><div class="dc-rack"></div><div class="dc-rack"></div><div class="dc-rack"></div></div>
+  </div>
+  <div class="dc-floor"></div>
+  <div class="dc-sweep"></div>
+  <div class="dc-haze"></div>
+  <div class="dc-noise"></div>
+</div>
 
-<main>
-  <!-- Landing -->
-  <section id="view-landing" class="page hidden">
-    <div class="hero">
-      <h1>see what your AI coding subscription is really worth</h1>
-      <p class="tag">tokentracker ingests Claude Code telemetry and shows your equivalent API spend — so you can answer the question: is my subscription paying for itself?</p>
-      <div class="label">combined spend across everyone tracked</div>
-      <div id="landing-cost" class="big">$0.00</div>
-      <div class="ctas">
-        <a class="btn primary" href="#/register">create an account</a>
-        <a class="btn" href="#/login">log in</a>
-        <a class="btn" href="#/leaderboard">view leaderboard</a>
-      </div>
-    </div>
+<!-- CONTENT -->
+<div class="content">
+  <nav class="nav">
+    <div class="logo" id="brand"><span class="caret">▲</span> GTT<span style="color: var(--ink-dimmer); margin-left: 10px; font-weight: 400;">global token tracker</span></div>
+    <div class="nav-links" id="nav"></div>
+  </nav>
 
-    <div class="how">
-      <div class="card">
-        <h3>1. register</h3>
-        <p>email + password. you'll get a one-time ingest token for Claude Code.</p>
+  <main>
+    <!-- Home = public totals -->
+    <section id="view-home" class="page hidden">
+      <div class="hero">
+        <div class="combined-label">combined spend across everyone tracked</div>
+        <div id="totals-cost" class="hero-number">$0.00</div>
+        <div class="stat-row">
+          <div class="stat"><div id="totals-tokens" class="n">0</div><div class="l">billed tokens</div></div>
+          <div class="stat"><div id="totals-requests" class="n">0</div><div class="l">requests</div></div>
+          <div class="stat"><div id="totals-users" class="n">0</div><div class="l">users</div></div>
+        </div>
+        <div class="cta-row" id="home-ctas" style="margin-top: 44px; margin-bottom: 0;"></div>
+        <div class="disclaimer">numbers are self-reported from each user's Claude Code telemetry. spoofing is possible — treat rankings as vibes, not truth.</div>
       </div>
-      <div class="card">
-        <h3>2. paste the token into settings.json</h3>
-        <p>telemetry flows automatically. no prompts, no code, just token counts + cost.</p>
-      </div>
-      <div class="card">
-        <h3>3. watch your dashboard + leaderboard</h3>
-        <p>your personal totals and a public leaderboard update in near real time.</p>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Totals (public) -->
-  <section id="view-totals" class="page hidden">
-    <div class="hero">
-      <div class="label">total equivalent api spend (all users)</div>
-      <div id="totals-cost" class="big">$0.00</div>
-      <div class="stats">
-        <div class="stat"><div id="totals-tokens" class="n">0</div><div class="l">billed tokens</div></div>
-        <div class="stat"><div id="totals-requests" class="n">0</div><div class="l">requests</div></div>
-        <div class="stat"><div id="totals-users" class="n">0</div><div class="l">users</div></div>
+    <!-- Leaderboard (public) -->
+    <section id="view-leaderboard" class="page hidden">
+      <div class="hero" style="margin-bottom: 1rem;">
+        <div class="combined-label">ranked by equivalent api spend</div>
+        <div class="disclaimer" style="margin-top: 8px;">self-reported. anyone with an ingest token can send whatever numbers they want — this is the honor system. vibes over truth.</div>
       </div>
-      <div id="totals-status" class="status">connecting…</div>
-    </div>
-  </section>
+      <div class="board-wrap">
+        <table class="board">
+          <thead>
+            <tr>
+              <th class="rank">#</th>
+              <th>handle</th>
+              <th class="num">cost</th>
+              <th class="num">billed</th>
+              <th class="num">requests</th>
+            </tr>
+          </thead>
+          <tbody id="board-body">
+            <tr><td colspan="5" class="empty">loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-  <!-- Leaderboard (public) -->
-  <section id="view-leaderboard" class="page hidden">
-    <div class="label" style="margin-top: 1rem">ranked by equivalent api spend</div>
-    <table class="board">
-      <thead>
-        <tr>
-          <th class="rank">#</th>
-          <th>handle</th>
-          <th class="num">cost</th>
-          <th class="num">billed</th>
-          <th class="num">requests</th>
-        </tr>
-      </thead>
-      <tbody id="board-body">
-        <tr><td colspan="5" class="empty">loading…</td></tr>
-      </tbody>
-    </table>
-  </section>
+    <!-- Setup guide (public) -->
+    <section id="view-setup" class="page hidden">
+      <div class="hero" style="margin-bottom: 1rem;">
+        <h1 class="hero-title" style="font-size: clamp(1.5rem, 4vw, 2.3rem);">wire up Claude Code</h1>
+        <p class="hero-sub">paste this into your Claude Code settings file and restart Claude Code. telemetry starts flowing within ~5 seconds.</p>
+      </div>
+      <div class="card wide">
+        <div class="row">
+          <div class="label">settings.json</div>
+          <pre id="setup-snippet" class="token-display" style="margin: 0; white-space: pre;"></pre>
+        </div>
+        <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0;">
+          <button class="btn btn-primary" id="setup-copy" type="button">copy snippet</button>
+          <a class="btn btn-ghost" href="#/register">get a token</a>
+        </div>
+        <div class="row" style="margin-top: 0.5rem;">
+          <div class="label">where to put it</div>
+          <ul style="margin: 0; padding-left: 1.25rem; color: var(--ink-dim); font-family: var(--mono); font-size: 12px; line-height: 1.8;">
+            <li>macOS / Linux: <code>~/.claude/settings.json</code></li>
+            <li>Windows: <code>%USERPROFILE%\.claude\settings.json</code></li>
+          </ul>
+        </div>
+        <div class="warn-banner">replace <code>&lt;your-ingest-token&gt;</code> with the token from your registration. if an <code>env</code> block already exists in your settings, merge these keys into it.</div>
+      </div>
+    </section>
 
-  <!-- Setup guide (public) -->
-  <section id="view-setup" class="page hidden">
-    <div class="hero" style="padding: 2rem 0 1rem;">
-      <h1 style="font-size: clamp(1.5rem, 4vw, 2.3rem);">wire up Claude Code</h1>
-      <p class="tag">paste this into your Claude Code settings file and restart Claude Code. telemetry starts flowing within ~5 seconds.</p>
-    </div>
-    <div class="form" style="max-width: 680px;">
-      <div class="row">
-        <div class="label">settings.json</div>
-        <pre id="setup-snippet" class="token-display" style="font-size: 0.82rem; white-space: pre; line-height: 1.5;"></pre>
-      </div>
-      <div class="ctas" style="justify-content: flex-start;">
-        <button class="btn primary" id="setup-copy" type="button">copy snippet</button>
-        <a class="btn" href="#/register" id="setup-register-link">get a token</a>
-      </div>
-      <div class="row" style="margin-top: 0.5rem;">
-        <div class="label">where to put it</div>
-        <ul style="margin: 0; padding-left: 1.25rem; color: var(--muted-2); font-size: 0.9rem; line-height: 1.7;">
-          <li>macOS / Linux: <code>~/.claude/settings.json</code></li>
-          <li>Windows: <code>%USERPROFILE%\.claude\settings.json</code></li>
-        </ul>
-      </div>
-      <div class="warn">replace <code>&lt;your-ingest-token&gt;</code> with the token from your registration. if an <code>env</code> block already exists in your settings, merge these keys into it.</div>
-    </div>
-  </section>
+    <!-- Register -->
+    <section id="view-register" class="page hidden">
+      <form class="card" id="form-register" autocomplete="on">
+        <h2>create an account</h2>
+        <p class="sub">email and password sign you into the dashboard. you'll also get a separate ingest token for Claude Code.</p>
+        <div class="row">
+          <label for="reg-email">email</label>
+          <input id="reg-email" type="email" required autocomplete="email" maxlength="254">
+        </div>
+        <div class="row">
+          <label for="reg-password">password (8+ characters)</label>
+          <input id="reg-password" type="password" required autocomplete="new-password" minlength="8" maxlength="128">
+        </div>
+        <div class="row">
+          <label for="reg-username">username (optional, public)</label>
+          <input id="reg-username" type="text" maxlength="32" placeholder="shown on the leaderboard">
+        </div>
+        <div id="reg-err" class="err"></div>
+        <button class="btn btn-primary" type="submit" style="justify-content: center;">register</button>
+        <div class="foot">already have an account? <a href="#/login">log in</a></div>
+      </form>
 
-  <!-- Register -->
-  <section id="view-register" class="page hidden">
-    <form class="form" id="form-register" autocomplete="on">
-      <h2>create an account</h2>
-      <p class="sub">email and password sign you into the dashboard. you'll also get a separate ingest token for Claude Code.</p>
-      <div class="row">
-        <label for="reg-email">email</label>
-        <input id="reg-email" type="email" required autocomplete="email" maxlength="254">
-      </div>
-      <div class="row">
-        <label for="reg-password">password (8+ characters)</label>
-        <input id="reg-password" type="password" required autocomplete="new-password" minlength="8" maxlength="128">
-      </div>
-      <div class="row">
-        <label for="reg-username">username (optional, public)</label>
-        <input id="reg-username" type="text" maxlength="32" placeholder="shown on the leaderboard">
-      </div>
-      <div id="reg-err" class="err"></div>
-      <button class="btn primary" type="submit">register</button>
-      <div class="foot">already have an account? <a href="#/login">log in</a></div>
-    </form>
-
-    <div id="reg-done" class="form hidden" style="max-width: 640px;">
-      <h2>saved — copy your ingest token</h2>
-      <p class="sub">this token goes into Claude Code's <code>settings.json</code> so telemetry reaches this account. it's shown once.</p>
-      <div id="reg-token" class="token-display"></div>
-      <div class="warn">you can't retrieve this token later. save it now, or rotate a new one from the dashboard.</div>
-      <div class="label" style="margin-top: 0.5rem;">full settings.json snippet (token already inserted)</div>
-      <pre id="reg-snippet" class="token-display" style="font-size: 0.78rem; white-space: pre; line-height: 1.5;"></pre>
-      <div class="ctas">
-        <button class="btn" id="reg-copy" type="button">copy token</button>
-        <button class="btn primary" id="reg-copy-snippet" type="button">copy full snippet</button>
-        <a class="btn" href="#/me">continue to dashboard</a>
-      </div>
-    </div>
-  </section>
-
-  <!-- Login -->
-  <section id="view-login" class="page hidden">
-    <form class="form" id="form-login" autocomplete="on">
-      <h2>log in</h2>
-      <p class="sub">to your tokentracker dashboard.</p>
-      <div class="row">
-        <label for="login-email">email</label>
-        <input id="login-email" type="email" required autocomplete="email">
-      </div>
-      <div class="row">
-        <label for="login-password">password</label>
-        <input id="login-password" type="password" required autocomplete="current-password">
-      </div>
-      <div id="login-err" class="err"></div>
-      <button class="btn primary" type="submit">log in</button>
-      <div class="foot">no account? <a href="#/register">register</a></div>
-    </form>
-  </section>
-
-  <!-- Dashboard (authed via cookie) -->
-  <section id="view-me" class="page hidden">
-    <div class="me-hdr">
-      <div class="who">signed in as <span class="h" id="me-handle">…</span></div>
-      <div class="inline-form">
-        <input id="me-username" type="text" maxlength="32" placeholder="set / change username">
-        <button class="btn" id="me-save-username" type="button">save</button>
-      </div>
-    </div>
-    <div id="me-username-err" class="err" style="text-align: right;"></div>
-
-    <div class="hero" style="padding-top: 1rem;">
-      <div class="label">your equivalent api spend</div>
-      <div id="me-cost" class="big">$0.00</div>
-      <div class="stats">
-        <div class="stat"><div id="me-tokens" class="n">0</div><div class="l">billed tokens</div></div>
-        <div class="stat"><div id="me-requests" class="n">0</div><div class="l">requests</div></div>
-      </div>
-      <div id="me-status" class="status">loading…</div>
-    </div>
-
-    <div class="tokens-section">
-      <h3>ingest token</h3>
-      <p>rotate if leaked. the old token stops working immediately; you'll need to update Claude Code's <code>settings.json</code> with the new one and restart.</p>
-      <div class="ctas" style="justify-content: flex-start;">
-        <button class="btn danger" id="me-rotate" type="button">rotate ingest token</button>
-      </div>
-      <div id="me-new-token-wrap" class="hidden" style="margin-top: 1rem; max-width: 640px;">
-        <div class="label" style="margin-bottom: 0.5rem;">new ingest token — save it now</div>
-        <div id="me-new-token" class="token-display"></div>
-        <div class="warn" style="margin-top: 0.75rem;">shown once. copy before navigating away.</div>
-        <div class="label" style="margin-top: 1rem; margin-bottom: 0.5rem;">settings.json snippet (new token inserted)</div>
-        <pre id="me-new-snippet" class="token-display" style="font-size: 0.78rem; white-space: pre; line-height: 1.5;"></pre>
-        <div class="ctas" style="justify-content: flex-start; margin-top: 0.75rem;">
-          <button class="btn" id="me-copy-new" type="button">copy token</button>
-          <button class="btn primary" id="me-copy-new-snippet" type="button">copy full snippet</button>
+      <div id="reg-done" class="card wide hidden">
+        <h2>saved — copy your ingest token</h2>
+        <p class="sub">this token goes into Claude Code's <code>settings.json</code> so telemetry reaches this account. it's shown once.</p>
+        <div id="reg-token" class="token-display"></div>
+        <div class="warn-banner">you can't retrieve this token later. save it now, or rotate a new one from the dashboard.</div>
+        <div class="label" style="margin-top: 0.5rem;">full settings.json snippet (token already inserted)</div>
+        <pre id="reg-snippet" class="token-display" style="margin: 0; white-space: pre; font-size: 11px;"></pre>
+        <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0;">
+          <button class="btn btn-ghost" id="reg-copy" type="button">copy token</button>
+          <button class="btn btn-primary" id="reg-copy-snippet" type="button">copy full snippet</button>
+          <a class="btn btn-ghost" href="#/me">continue to dashboard</a>
         </div>
       </div>
-    </div>
-  </section>
-</main>
+    </section>
+
+    <!-- Login -->
+    <section id="view-login" class="page hidden">
+      <form class="card" id="form-login" autocomplete="on">
+        <h2>log in</h2>
+        <p class="sub">to your GTT dashboard.</p>
+        <div class="row">
+          <label for="login-email">email</label>
+          <input id="login-email" type="email" required autocomplete="email">
+        </div>
+        <div class="row">
+          <label for="login-password">password</label>
+          <input id="login-password" type="password" required autocomplete="current-password">
+        </div>
+        <div id="login-err" class="err"></div>
+        <button class="btn btn-primary" type="submit" style="justify-content: center;">log in</button>
+        <div class="foot">no account? <a href="#/register">register</a></div>
+      </form>
+    </section>
+
+    <!-- Dashboard (authed) -->
+    <section id="view-me" class="page hidden">
+      <div class="me-hdr">
+        <div class="who">signed in as <span class="h" id="me-handle">…</span></div>
+        <div class="inline-form">
+          <input id="me-username" type="text" maxlength="32" placeholder="set / change username">
+          <button class="btn btn-ghost sm" id="me-save-username" type="button">save</button>
+        </div>
+      </div>
+      <div id="me-username-err" class="err" style="text-align: right; max-width: 900px; margin: 0.25rem auto 0; padding: 0 16px; font-family: var(--mono); font-size: 12px; color: var(--danger); min-height: 1.2em;"></div>
+
+      <div class="hero" style="margin-top: 1.5rem;">
+        <div class="combined-label">your equivalent api spend</div>
+        <div id="me-cost" class="hero-number sm">$0.00</div>
+        <div class="stat-row">
+          <div class="stat"><div id="me-tokens" class="n">0</div><div class="l">billed tokens</div></div>
+          <div class="stat"><div id="me-requests" class="n">0</div><div class="l">requests</div></div>
+        </div>
+      </div>
+
+      <div class="tokens-section">
+        <h3>ingest token</h3>
+        <p>rotate if leaked. the old token stops working immediately; you'll need to update Claude Code's <code>settings.json</code> with the new one and restart.</p>
+        <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0;">
+          <button class="btn btn-danger" id="me-rotate" type="button">rotate ingest token</button>
+        </div>
+        <div id="me-new-token-wrap" class="hidden" style="margin-top: 1.25rem;">
+          <div class="label" style="margin-bottom: 0.5rem;">new ingest token — save it now</div>
+          <div id="me-new-token" class="token-display"></div>
+          <div class="warn-banner" style="margin-top: 0.75rem;">shown once. copy before navigating away.</div>
+          <div class="label" style="margin-top: 1rem; margin-bottom: 0.5rem;">settings.json snippet (new token inserted)</div>
+          <pre id="me-new-snippet" class="token-display" style="margin: 0; white-space: pre; font-size: 11px;"></pre>
+          <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0; margin-top: 0.75rem;">
+            <button class="btn btn-ghost" id="me-copy-new" type="button">copy token</button>
+            <button class="btn btn-primary" id="me-copy-new-snippet" type="button">copy full snippet</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
 
 <script>
 (() => {
   const fmtUsd = new Intl.NumberFormat('en-US', {
     style: 'currency', currency: 'USD',
-    minimumFractionDigits: 2, maximumFractionDigits: 4,
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
   const fmtInt = new Intl.NumberFormat('en-US');
   const $ = id => document.getElementById(id);
@@ -447,8 +817,7 @@
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   const POLL_MS = 2000;
-  const LANDING_POLL_MS = 5000;
-  const TICK_MS = 900; // duration of the count-up animation
+  const TICK_MS = 900;
 
   const state = {
     loggedIn: false,
@@ -458,8 +827,6 @@
     rafs: [],
   };
 
-  // Animated counter: tweens from the last shown value to the next one.
-  // ease-out cubic, so it starts fast and settles.
   function makeTicker(el, fmt) {
     let current = null;
     let rafId = null;
@@ -497,7 +864,6 @@
   const intTicker = el => makeTicker(el, v => fmtInt.format(Math.round(v)));
 
   const fetchOpts = (opts = {}) => ({ credentials: 'same-origin', cache: 'no-store', ...opts });
-
   async function fetchJson(url, opts = {}) {
     const r = await fetch(url, fetchOpts(opts));
     if (!r.ok) {
@@ -522,7 +888,7 @@
     $(sectionId).classList.remove('hidden');
   }
 
-  async function copy(text, btn, done = 'copied ✓', orig = 'copy token') {
+  async function copy(text, btn, done = 'copied ✓', orig = 'copy') {
     try {
       await navigator.clipboard.writeText(text);
       btn.textContent = done;
@@ -530,20 +896,31 @@
     } catch { /* ignore */ }
   }
 
-  // --- views ---
-  function renderLanding() {
-    showOnly('view-landing');
-    const tickCost = usdTicker($('landing-cost'));
-    poll(async () => {
-      try {
-        const d = await fetchJson('/stats/totals');
-        tickCost(Number(d.total_cost_usd || 0));
-      } catch { /* ignore on landing */ }
-    }, LANDING_POLL_MS);
+  function buildSettingsSnippet(token) {
+    return [
+      '{',
+      '  "env": {',
+      '    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",',
+      '    "OTEL_METRICS_EXPORTER": "otlp",',
+      '    "OTEL_LOGS_EXPORTER": "otlp",',
+      '    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",',
+      '    "OTEL_EXPORTER_OTLP_ENDPOINT": "' + location.origin + '",',
+      '    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer ' + token + '"',
+      '  }',
+      '}',
+    ].join('\n');
   }
 
-  function renderTotals() {
-    showOnly('view-totals');
+  // --- views ---
+  function renderHome() {
+    showOnly('view-home');
+    // CTAs only for logged-out visitors; logged-in users just see the numbers.
+    const ctaEl = $('home-ctas');
+    ctaEl.innerHTML = state.loggedIn
+      ? ''
+      : '<a class="btn btn-primary" href="#/register">create an account</a>'
+      + '<a class="btn btn-ghost" href="#/login">log in</a>'
+      + '<a class="btn btn-ghost" href="#/leaderboard">view leaderboard</a>';
     const tickCost = usdTicker($('totals-cost'));
     const tickTokens = intTicker($('totals-tokens'));
     const tickRequests = intTicker($('totals-requests'));
@@ -555,10 +932,7 @@
         tickTokens(d.billed_tokens || 0);
         tickRequests(d.total_requests || 0);
         tickUsers(d.total_users || 0);
-        $('totals-status').textContent = d.last_activity_at
-          ? 'last event ' + new Date(d.last_activity_at).toLocaleString()
-          : 'waiting for first event…';
-      } catch (e) { $('totals-status').textContent = 'error: ' + e.message; }
+      } catch { /* ignore transient errors */ }
     }, POLL_MS);
   }
 
@@ -585,6 +959,11 @@
         body.innerHTML = `<tr><td colspan="5" class="empty">error: ${escapeHtml(e.message)}</td></tr>`;
       }
     }, POLL_MS);
+  }
+
+  function renderSetup() {
+    showOnly('view-setup');
+    $('setup-snippet').textContent = buildSettingsSnippet('<your-ingest-token>');
   }
 
   function renderRegister() {
@@ -620,40 +999,16 @@
         tickCost(Number(d.total_cost_usd || 0));
         tickTokens(d.billed_tokens || 0);
         tickRequests(d.requests || 0);
-        $('me-status').textContent = d.last_activity_at
-          ? 'last event ' + new Date(d.last_activity_at).toLocaleString()
-          : 'waiting for your first event…';
       } catch (e) {
         if (e.status === 401) { state.loggedIn = false; location.hash = '#/login'; return; }
-        $('me-status').textContent = 'error: ' + e.message;
       }
     }, POLL_MS);
   }
 
-  function buildSettingsSnippet(token) {
-    return [
-      '{',
-      '  "env": {',
-      '    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",',
-      '    "OTEL_METRICS_EXPORTER": "otlp",',
-      '    "OTEL_LOGS_EXPORTER": "otlp",',
-      '    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",',
-      '    "OTEL_EXPORTER_OTLP_ENDPOINT": "' + location.origin + '",',
-      '    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer ' + token + '"',
-      '  }',
-      '}',
-    ].join('\n');
-  }
-
-  function renderSetup() {
-    showOnly('view-setup');
-    $('setup-snippet').textContent = buildSettingsSnippet('<your-ingest-token>');
-  }
-
   const views = {
-    '':            renderLanding,
-    '/':           renderLanding,
-    '/totals':     renderTotals,
+    '':            renderHome,
+    '/':           renderHome,
+    '/totals':     renderHome,  // alias so old links still work
     '/leaderboard':renderLeaderboard,
     '/setup':      renderSetup,
     '/register':   renderRegister,
@@ -661,13 +1016,11 @@
     '/me':         renderMe,
   };
 
-  // --- nav ---
   function renderNav() {
     const nav = $('nav');
     const links = state.loggedIn
       ? [
           { href: '#/',            label: 'home' },
-          { href: '#/totals',      label: 'totals' },
           { href: '#/leaderboard', label: 'leaderboard' },
           { href: '#/setup',       label: 'setup' },
           { href: '#/me',          label: 'dashboard' },
@@ -675,7 +1028,6 @@
         ]
       : [
           { href: '#/',            label: 'home' },
-          { href: '#/totals',      label: 'totals' },
           { href: '#/leaderboard', label: 'leaderboard' },
           { href: '#/setup',       label: 'setup' },
           { href: '#/login',       label: 'log in' },
@@ -684,7 +1036,7 @@
     const path = location.hash.slice(1) || '/';
     nav.innerHTML = links.map(l => {
       const active = l.href === '#' + path;
-      const cls = [];
+      const cls = ['nav-link'];
       if (active) cls.push('active');
       if (l.cta) cls.push('cta');
       return `<a href="${l.href}" class="${cls.join(' ')}">${l.label}</a>`;
@@ -717,17 +1069,9 @@
     }
   });
 
-  $('reg-copy').addEventListener('click', () => {
-    copy($('reg-token').textContent, $('reg-copy'), 'copied ✓', 'copy token');
-  });
-
-  $('reg-copy-snippet').addEventListener('click', () => {
-    copy($('reg-snippet').textContent, $('reg-copy-snippet'), 'copied ✓', 'copy full snippet');
-  });
-
-  $('setup-copy').addEventListener('click', () => {
-    copy($('setup-snippet').textContent, $('setup-copy'), 'copied ✓', 'copy snippet');
-  });
+  $('reg-copy').addEventListener('click', () => copy($('reg-token').textContent, $('reg-copy'), 'copied ✓', 'copy token'));
+  $('reg-copy-snippet').addEventListener('click', () => copy($('reg-snippet').textContent, $('reg-copy-snippet'), 'copied ✓', 'copy full snippet'));
+  $('setup-copy').addEventListener('click', () => copy($('setup-snippet').textContent, $('setup-copy'), 'copied ✓', 'copy snippet'));
 
   $('form-login').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -780,13 +1124,8 @@
     }
   });
 
-  $('me-copy-new').addEventListener('click', () => {
-    copy($('me-new-token').textContent, $('me-copy-new'), 'copied ✓', 'copy token');
-  });
-
-  $('me-copy-new-snippet').addEventListener('click', () => {
-    copy($('me-new-snippet').textContent, $('me-copy-new-snippet'), 'copied ✓', 'copy full snippet');
-  });
+  $('me-copy-new').addEventListener('click', () => copy($('me-new-token').textContent, $('me-copy-new'), 'copied ✓', 'copy token'));
+  $('me-copy-new-snippet').addEventListener('click', () => copy($('me-new-snippet').textContent, $('me-copy-new-snippet'), 'copied ✓', 'copy full snippet'));
 
   $('brand').addEventListener('click', () => location.hash = '#/');
 
@@ -797,7 +1136,6 @@
     state.username = null;
   }
 
-  // --- router ---
   async function route() {
     clearPollers();
     if (location.hash === '#logout') {
@@ -811,7 +1149,6 @@
   }
   window.addEventListener('hashchange', route);
 
-  // --- boot ---
   (async () => {
     try {
       const me = await fetchJson('/me');

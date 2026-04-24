@@ -1,5 +1,9 @@
 services:
+  # Local Postgres for dev. Opt in via `--profile local`:
+  #   docker compose --profile local up -d
+  # Without the flag, the app uses whatever DATABASE_URL .env provides (e.g. Neon).
   db:
+    profiles: ["local"]
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: tokentracker
@@ -18,23 +22,15 @@ services:
 
   app:
     build: .
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://tokentracker:dev@db:5432/tokentracker
-      # 32+ byte server-side secret. MUST be replaced in production with a strong random value.
-      AUTH_SECRET: dev-auth-secret-replace-in-production-must-be-32-bytes-or-more
-      # "1" when serving over HTTPS in production (also enables HSTS + hides /docs).
-      COOKIE_SECURE: "0"
-      # "1" when behind a trusted proxy so rate limits key on real client IP.
-      TRUST_PROXY: "0"
+    # .env drives DATABASE_URL, AUTH_SECRET, COOKIE_SECURE, TRUST_PROXY, DB_POOL_MAX,
+    # DB_DISABLE_PREPARE. Keep .env gitignored.
+    env_file: .env
     ports:
       - "8000:8000"
     volumes:
       - ./src:/app/src:ro
       - ./scripts:/app/scripts:ro
-    # Dev-only overrides of the production CMD: --reload watches the bind-mounted source.
+    # Dev-only override of the production CMD: --reload watches the bind-mounted source.
     command: uvicorn tokentracker.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
 volumes:
