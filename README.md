@@ -1,32 +1,28 @@
 # tokentracker
 
-OTLP ingest server for Claude Code usage data. Receives `claude_code.api_request`
-events via OpenTelemetry, stores them in Postgres, exposes a per-user usage query.
+OTLP ingest server + public dashboard for Claude Code usage data.
 
-## Quick start
+## Auth model
+
+Two secrets per user, issued at register time:
+
+| Secret | Where it lives | Used for |
+|---|---|---|
+| **Password** | user's head / password manager | logging into the web dashboard |
+| **Ingest token** | Claude Code's `settings.json` | POSTing OTLP telemetry to `/v1/logs`, `/v1/metrics` |
+
+Why two: a stolen session cookie can read dashboards but can't forge usage data, and a stolen ingest token can forge usage data but can't see anything else. Both are stored server-side only as hashes — passwords with Argon2id, ingest tokens and session cookies with HMAC-SHA256 keyed by a server-side pepper (`AUTH_SECRET`).
+
+Web sessions are HttpOnly, SameSite=Strict cookies — JavaScript cannot read them, so XSS can't lift them. Ingest tokens are sent as `Authorization: Bearer …` and never touch the browser.
+
+## Quick start (local dev)
 
 ```bash
 docker compose up -d
-curl http://localhost:8000/healthz
+open http://localhost:8000/
 ```
 
-The `app` container builds with `uv`; Postgres initializes from `sql/001_init.sql`
-on first start. No host-side Python or Postgres install needed.
-
-## Register a user (local dev)
-
-```bash
-curl -X POST http://localhost:8000/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"me@example.com"}'
-# => {"user_id":1,"token":"<save this>"}
-```
-
-The plaintext token is returned once. Only its SHA-256 hash is stored.
-
-## Point Claude Code at the server
-
-Add to `~/.claude/settings.json` (user-level, keeps the secret out of any repo):
+Register in the UI → copy the ingest token → paste it into `~/.claude/settings.json`:
 
 ```json
 {
@@ -36,47 +32,108 @@ Add to `~/.claude/settings.json` (user-level, keeps the secret out of any repo):
     "OTEL_LOGS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:8000",
-    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer <your-token>"
+    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer <your-ingest-token>"
   }
 }
 ```
 
-Events arrive on `/v1/logs`. Metrics currently hit `/v1/metrics` as a stub (accepted,
-discarded) so Claude Code doesn't see errors.
+Restart Claude Code. Events flow within ~5s.
 
-## Sanity check
+## Endpoints
 
-```bash
-curl -H "Authorization: Bearer <token>" http://localhost:8000/usage/me
+**Public (no auth):**
+- `GET /` — the SPA
+- `GET /stats/totals` — aggregate spend + counts
+- `GET /stats/leaderboard?limit=100` — ranked by cost, handles only
+- `GET /healthz`
+
+**Web session cookie (HttpOnly):**
+- `POST /register` — email + password (+ optional username); sets cookie, returns ingest token
+- `POST /login` — email + password; sets cookie
+- `POST /logout` — clears cookie + deletes the session row
+- `GET /me` — current user
+- `GET /usage/me` — per-user totals
+- `PATCH /me/username` — set / change username
+- `POST /me/ingest-token/rotate` — invalidates the old ingest token, returns a new one
+
+**Ingest Bearer token (Claude Code only):**
+- `POST /v1/logs` — OTLP/protobuf logs; only `claude_code.api_request` records are stored
+- `POST /v1/metrics` — stub that accepts and discards
+
+## Deploying to Vercel
+
+Vercel is supported via the `api/index.py` entry point and `vercel.json` at the repo root.
+
+**One-time setup:**
+1. **Pick a Postgres host with a transaction-mode pooler**. Serverless fan-out will otherwise exhaust `max_connections`. Recommended: Supabase (use the `*-pooler.supabase.com` connection string), Neon (use the `-pooler` host), or Vercel Postgres.
+2. Run `sql/001_init.sql` against the production DB (once) — Vercel doesn't run Docker init scripts.
+3. In the Vercel project dashboard → Settings → Environment Variables, set:
+   ```
+   DATABASE_URL    = <your pooler connection string>
+   AUTH_SECRET     = <openssl rand -hex 32>
+   COOKIE_SECURE   = 1
+   TRUST_PROXY     = 1
+   DB_POOL_MAX     = 1
+   ```
+4. **Enable "Deployment Protection"** on preview deployments (Vercel → Project → Settings → Deployment Protection → Vercel Authentication). Previews shouldn't be publicly accessible with a shared `AUTH_SECRET`.
+5. Deploy: `vercel deploy --prod` or push to main.
+
+**Caveats of running on Vercel:**
+- The OTLP ingest endpoint incurs one serverless invocation per Claude Code export (every ~5s per active session). Watch your invocation budget; for heavy use a VPS is cheaper.
+- `lifespan` runs per cold container — first request after scale-up pays ~1s cold start.
+- `rate_limits` table grows a bit; opportunistic prune happens inline, no cron needed.
+
+## Production deploy checklist (generic / non-Vercel)
+
+1. **Set `AUTH_SECRET`** to 32+ bytes of random data. Rotating it invalidates every session and every ingest token — plan accordingly.
+   ```bash
+   AUTH_SECRET=$(openssl rand -hex 32)
+   ```
+2. **Set `COOKIE_SECURE=1`** — only valid if you terminate TLS in front of the app. Also enables HSTS and hides `/docs`, `/redoc`, `/openapi.json`.
+3. **Set `TRUST_PROXY=1`** if (and only if) requests reach the app through a proxy you control (Cloudflare, Fly.io, nginx). Enables `X-Forwarded-For`-based rate-limit keys. **Do not enable without a trusted proxy** — any client can spoof the header.
+4. Terminate TLS (Caddy / Cloudflare / Fly.io / nginx — whichever).
+5. Change the Postgres password in `docker-compose.yml` (default is `dev`).
+6. The Dockerfile CMD runs without `--reload`; `docker-compose.yml` adds `--reload` only for dev. Deploy using the image directly (e.g., `docker run tokentracker-app`), not via `docker compose up`, so dev-only overrides don't leak into prod.
+
+## Security properties
+
+- Passwords hashed with Argon2id (default parameters, ~100ms per verify).
+- Ingest tokens and session cookies hashed with HMAC-SHA256(pepper, token) — a DB dump alone cannot be used to authenticate without also capturing `AUTH_SECRET`.
+- Session cookies: HttpOnly, SameSite=Strict, 30-day TTL, server-side session rows so logout is a real revocation.
+- Timing: login path always runs Argon2 verify (real or dummy) so a missing user and a wrong password have the same latency.
+- Rate limits: 10/min per IP on `/login`, 3/5min per IP on `/register`.
+- Request-body cap: 5 MB on every route — defuses body-bomb DoS. OTLP batches from Claude Code are orders of magnitude smaller.
+- Container: runs as non-root user `app` (UID 1001).
+- Response headers: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, CSP with `default-src 'self'` and `frame-ancestors 'none'`, and HSTS in prod.
+- `/docs`, `/redoc`, `/openapi.json` disabled in prod (gated on `COOKIE_SECURE=1`).
+- Dependency footprint: FastAPI + uvicorn + psycopg + opentelemetry-proto + argon2-cffi — roughly 25 transitive packages.
+
+## Known limitations (for now)
+
+- No email verification / password reset.
+- No audit log of who changed what.
+- Rate limiter is in-memory and per-process — if you scale to multiple workers, attackers get N × the budget. Move to Postgres or Redis before scaling horizontally.
+- CSP allows `'unsafe-inline'` for scripts and styles since the HTML has inline blocks; migrate to nonced external files for a tighter policy.
+
+## Schema
+
 ```
-
-## Synthetic event (no Claude Code needed)
-
-```bash
-docker compose exec app python /app/scripts/post_sample_event.py <token>
+users         id, email UNIQUE, username UNIQUE, password_hash, ingest_token_hash UNIQUE, created_at
+sessions      id, user_id, token_hash UNIQUE, created_at, last_seen_at, expires_at
+api_requests  id, user_id, billed_tokens (output + cache_creation), cost_usd, request_id, occurred_at, UNIQUE(user_id, request_id)
 ```
-
-On Git Bash for Windows prefix with `MSYS_NO_PATHCONV=1` so the `/app/...` path is
-passed through unmangled.
 
 ## Layout
 
 ```
 src/tokentracker/
-  main.py       FastAPI app + lifespan
-  db.py         asyncpg pool
-  security.py   token generation, hashing, Bearer auth dependency
-  otlp.py       OTLP protobuf parser; keeps only api_request events
-  routes.py     /register, /v1/logs, /v1/metrics, /usage/me, /healthz
+  main.py          FastAPI app + lifespan + SecurityHeaders middleware
+  db.py            connection pool
+  security.py      Argon2, HMAC, cookies, auth dependencies
+  ratelimit.py     in-memory per-IP token bucket
+  otlp.py          protobuf parser; keeps only api_request events
+  routes.py        auth routes, /v1/logs, /v1/metrics, /usage/me, /stats/*
+  static/index.html  SPA frontend
 sql/001_init.sql
 scripts/post_sample_event.py
 ```
-
-## Notes
-
-- Only `event.name == "api_request"` records are ingested. Prompt content,
-  tool inputs, and raw API bodies are never emitted by Claude Code on this
-  event and would be ignored if present.
-- Dedup key: `(user_id, request_id)`. Retried OTLP batches are safe.
-- `user.email` arrives automatically for OAuth-authenticated (Pro/Max) users
-  and is stored in `api_requests.reported_email` for reference.

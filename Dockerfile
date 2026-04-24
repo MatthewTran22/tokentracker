@@ -12,8 +12,14 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 
-RUN uv sync
+RUN uv sync \
+ && groupadd --system --gid 1001 app \
+ && useradd  --system --uid 1001 --gid app --shell /usr/sbin/nologin app \
+ && chown -R app:app /app
+
+USER app
 
 EXPOSE 8000
 
-CMD ["uvicorn", "tokentracker.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
+# Production default: no --reload. docker-compose (dev) overrides via `command:`.
+CMD ["uvicorn", "tokentracker.main:app", "--host", "0.0.0.0", "--port", "8000"]

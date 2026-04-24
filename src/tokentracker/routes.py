@@ -1,3 +1,4 @@
+import os
 import re
 from datetime import datetime, timezone
 
@@ -12,11 +13,23 @@ from psycopg import errors as pg_errors
 from pydantic import BaseModel, Field
 
 from .otlp import parse_api_request_events
-from .security import current_user, generate_token, hash_token
+from .ratelimit import check_rate
+from .security import (
+    clear_session_cookie,
+    current_user_ingest,
+    current_user_session,
+    generate_token,
+    hash_password,
+    hmac_hash,
+    new_session,
+    set_session_cookie,
+    verify_password_safe,
+)
 
 router = APIRouter()
 
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_\-]{2,32}$")
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _validate_username(u: str) -> str:
@@ -29,34 +42,167 @@ def _validate_username(u: str) -> str:
     return u
 
 
+def _validate_email(email: str) -> str:
+    email = email.strip().lower()
+    if len(email) > 254 or not _EMAIL_RE.fullmatch(email):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid email")
+    return email
+
+
+def _validate_password(pw: str) -> None:
+    if not isinstance(pw, str) or len(pw) < 8:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "password must be at least 8 characters"
+        )
+    if len(pw) > 128:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "password too long (max 128)")
+
+
+_TRUST_PROXY = os.environ.get("TRUST_PROXY") == "1"
+
+
+def _client_key(request: Request) -> str:
+    # When TRUST_PROXY=1, honor proxy-set IP headers in this order of
+    # preference: x-real-ip (Vercel/nginx), cf-connecting-ip (Cloudflare),
+    # then leftmost x-forwarded-for. Set this ONLY when the immediate
+    # upstream is a trusted proxy — otherwise any client can spoof the
+    # header to bypass rate limits.
+    if _TRUST_PROXY:
+        for hdr in ("x-real-ip", "cf-connecting-ip"):
+            v = request.headers.get(hdr)
+            if v and v.strip():
+                return v.strip()
+        fwd = request.headers.get("x-forwarded-for")
+        if fwd:
+            first = fwd.split(",")[0].strip()
+            if first:
+                return first
+    return request.client.host if request.client else "unknown"
+
+
+# ---- auth: register ----
+
 class RegisterIn(BaseModel):
-    email: str | None = None
+    email: str
+    password: str
     username: str | None = Field(default=None)
 
 
 class RegisterOut(BaseModel):
     user_id: int
-    token: str
     username: str | None
+    ingest_token: str
 
 
 @router.post("/register", response_model=RegisterOut)
-async def register(body: RegisterIn, request: Request) -> RegisterOut:
-    username = _validate_username(body.username) if body.username else None
-    token = generate_token()
-    token_hash = hash_token(token)
+async def register(body: RegisterIn, request: Request, response: Response) -> RegisterOut:
     pool = request.app.state.pool
+    if not await check_rate(pool, f"register:{_client_key(request)}", limit=3, window_seconds=300):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many registrations, try later")
+
+    email = _validate_email(body.email)
+    _validate_password(body.password)
+    username = _validate_username(body.username) if body.username else None
+
+    password_hash = hash_password(body.password)
+    ingest_token = generate_token()
+    ingest_token_hash = hmac_hash(ingest_token)
+    session_token, session_hash, expires_at = new_session()
+
     try:
+        async with pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        INSERT INTO users (email, username, password_hash, ingest_token_hash)
+                        VALUES (%s, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        (email, username, password_hash, ingest_token_hash),
+                    )
+                    user_id = (await cur.fetchone())[0]
+                    await cur.execute(
+                        "INSERT INTO sessions (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+                        (user_id, session_hash, expires_at),
+                    )
+    except pg_errors.UniqueViolation as e:
+        msg = str(e)
+        if "email" in msg:
+            raise HTTPException(status.HTTP_409_CONFLICT, "email already registered")
+        if "username" in msg:
+            raise HTTPException(status.HTTP_409_CONFLICT, "username already taken")
+        raise HTTPException(status.HTTP_409_CONFLICT, "conflict")
+
+    set_session_cookie(response, session_token)
+    return RegisterOut(user_id=user_id, username=username, ingest_token=ingest_token)
+
+
+# ---- auth: login ----
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+@router.post("/login")
+async def login(body: LoginIn, request: Request, response: Response) -> dict:
+    pool = request.app.state.pool
+    if not await check_rate(pool, f"login:{_client_key(request)}", limit=10, window_seconds=60):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many attempts, try later")
+
+    email = body.email.strip().lower()
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT id, password_hash, username FROM users WHERE email = %s",
+                (email,),
+            )
+            row = await cur.fetchone()
+
+    if row is None:
+        # Still verify against a dummy hash to equalize timing.
+        verify_password_safe(body.password, None)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
+
+    user_id, password_hash, username = row
+    if not verify_password_safe(body.password, password_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
+
+    session_token, session_hash, expires_at = new_session()
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "INSERT INTO sessions (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+                (user_id, session_hash, expires_at),
+            )
+
+    set_session_cookie(response, session_token)
+    return {"user_id": user_id, "username": username}
+
+
+# ---- auth: logout ----
+
+@router.post("/logout")
+async def logout(request: Request, response: Response) -> dict:
+    cookie = request.cookies.get("tt_session")
+    if cookie:
+        pool = request.app.state.pool
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO users (email, username, token_hash) VALUES (%s, %s, %s) RETURNING id",
-                    (body.email, username, token_hash),
+                    "DELETE FROM sessions WHERE token_hash = %s",
+                    (hmac_hash(cookie),),
                 )
-                row = await cur.fetchone()
-    except pg_errors.UniqueViolation:
-        raise HTTPException(status.HTTP_409_CONFLICT, "username already taken")
-    return RegisterOut(user_id=row[0], token=token, username=username)
+    clear_session_cookie(response)
+    return {"ok": True}
+
+
+# ---- session-authed account routes ----
+
+@router.get("/me")
+async def me(user: dict = Depends(current_user_session)) -> dict:
+    return {"user_id": user["id"], "username": user["username"]}
 
 
 class UsernameIn(BaseModel):
@@ -65,7 +211,7 @@ class UsernameIn(BaseModel):
 
 @router.patch("/me/username")
 async def set_username(
-    body: UsernameIn, request: Request, user: dict = Depends(current_user)
+    body: UsernameIn, request: Request, user: dict = Depends(current_user_session)
 ) -> dict:
     username = _validate_username(body.username)
     pool = request.app.state.pool
@@ -82,8 +228,59 @@ async def set_username(
     return {"user_id": user["id"], "username": row[0]}
 
 
+@router.post("/me/ingest-token/rotate")
+async def rotate_ingest_token(
+    request: Request, user: dict = Depends(current_user_session)
+) -> dict:
+    new_token = generate_token()
+    new_hash = hmac_hash(new_token)
+    pool = request.app.state.pool
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE users SET ingest_token_hash = %s WHERE id = %s",
+                (new_hash, user["id"]),
+            )
+    return {"ingest_token": new_token}
+
+
+@router.get("/usage/me")
+async def usage_me(request: Request, user: dict = Depends(current_user_session)) -> dict:
+    pool = request.app.state.pool
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                    u.username,
+                    count(r.id)::bigint                  AS requests,
+                    COALESCE(sum(r.billed_tokens), 0)    AS billed_tokens,
+                    COALESCE(sum(r.cost_usd), 0)::float  AS total_cost_usd,
+                    max(r.occurred_at)                   AS last_activity_at
+                FROM users u
+                LEFT JOIN api_requests r ON r.user_id = u.id
+                WHERE u.id = %s
+                GROUP BY u.id, u.username
+                """,
+                (user["id"],),
+            )
+            row = await cur.fetchone()
+    return {
+        "user_id": user["id"],
+        "username": row[0],
+        "requests": row[1],
+        "billed_tokens": row[2],
+        "total_cost_usd": row[3],
+        "last_activity_at": row[4].isoformat() if row[4] else None,
+    }
+
+
+# ---- ingest (Bearer-authed via ingest token) ----
+
 @router.post("/v1/logs")
-async def ingest_logs(request: Request, user: dict = Depends(current_user)) -> Response:
+async def ingest_logs(
+    request: Request, user: dict = Depends(current_user_ingest)
+) -> Response:
     ctype = request.headers.get("content-type", "")
     if "protobuf" not in ctype:
         raise HTTPException(
@@ -124,45 +321,17 @@ async def ingest_logs(request: Request, user: dict = Depends(current_user)) -> R
 
 
 @router.post("/v1/metrics")
-async def ingest_metrics(request: Request, user: dict = Depends(current_user)) -> Response:
-    # v1 stub: accept and discard metrics so clients with OTEL_METRICS_EXPORTER=otlp
-    # don't receive errors. All per-request usage data is already captured via /v1/logs.
+async def ingest_metrics(
+    request: Request, user: dict = Depends(current_user_ingest)
+) -> Response:
+    # v1 stub: accept and discard so clients with OTEL_METRICS_EXPORTER=otlp don't error.
     return Response(
         content=ExportMetricsServiceResponse().SerializeToString(),
         media_type="application/x-protobuf",
     )
 
 
-@router.get("/usage/me")
-async def usage_me(request: Request, user: dict = Depends(current_user)) -> dict:
-    pool = request.app.state.pool
-    async with pool.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                SELECT
-                    u.username,
-                    count(r.id)::bigint                  AS requests,
-                    COALESCE(sum(r.billed_tokens), 0)    AS billed_tokens,
-                    COALESCE(sum(r.cost_usd), 0)::float  AS total_cost_usd,
-                    max(r.occurred_at)                   AS last_activity_at
-                FROM users u
-                LEFT JOIN api_requests r ON r.user_id = u.id
-                WHERE u.id = %s
-                GROUP BY u.id, u.username
-                """,
-                (user["id"],),
-            )
-            row = await cur.fetchone()
-    return {
-        "user_id": user["id"],
-        "username": row[0],
-        "requests": row[1],
-        "billed_tokens": row[2],
-        "total_cost_usd": row[3],
-        "last_activity_at": row[4].isoformat() if row[4] else None,
-    }
-
+# ---- public stats ----
 
 @router.get("/stats/totals")
 async def stats_totals(request: Request) -> dict:
@@ -201,10 +370,10 @@ async def stats_leaderboard(request: Request, limit: int = 100) -> dict:
                 SELECT
                     u.id,
                     COALESCE(u.username, 'user ' || u.id::text) AS handle,
-                    COALESCE(sum(r.cost_usd), 0)::float   AS total_cost_usd,
-                    COALESCE(sum(r.billed_tokens), 0)     AS billed_tokens,
-                    count(r.id)::bigint                   AS requests,
-                    max(r.occurred_at)                    AS last_activity_at
+                    COALESCE(sum(r.cost_usd), 0)::float         AS total_cost_usd,
+                    COALESCE(sum(r.billed_tokens), 0)           AS billed_tokens,
+                    count(r.id)::bigint                         AS requests,
+                    max(r.occurred_at)                          AS last_activity_at
                 FROM users u
                 LEFT JOIN api_requests r ON r.user_id = u.id
                 GROUP BY u.id, u.username

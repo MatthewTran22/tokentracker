@@ -23,11 +23,19 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://tokentracker:dev@db:5432/tokentracker
+      # 32+ byte server-side secret. MUST be replaced in production with a strong random value.
+      AUTH_SECRET: dev-auth-secret-replace-in-production-must-be-32-bytes-or-more
+      # "1" when serving over HTTPS in production (also enables HSTS + hides /docs).
+      COOKIE_SECURE: "0"
+      # "1" when behind a trusted proxy so rate limits key on real client IP.
+      TRUST_PROXY: "0"
     ports:
       - "8000:8000"
     volumes:
       - ./src:/app/src:ro
       - ./scripts:/app/scripts:ro
+    # Dev-only overrides of the production CMD: --reload watches the bind-mounted source.
+    command: uvicorn tokentracker.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
 volumes:
   db_data:

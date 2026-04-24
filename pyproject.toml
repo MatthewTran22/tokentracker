@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn>=0.32",
     "psycopg[binary,pool]>=3.2",
     "opentelemetry-proto>=1.27",
+    "argon2-cffi>=23.1",
 ]
 
 [build-system]

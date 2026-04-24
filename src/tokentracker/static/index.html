@@ -16,6 +16,7 @@
     --border: #2a2f3a;
     --accent: #7cdcaf;
     --danger: #ff6b6b;
+    --warn: #cb8f2e;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -29,8 +30,14 @@
   }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #0c1016;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.88em;
+  }
 
-  /* Header / nav */
   header {
     display: flex;
     align-items: center;
@@ -49,21 +56,20 @@
   }
   .brand::before { content: "▲ "; color: var(--accent); }
   nav { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-  nav a {
+  nav a, nav button {
     padding: 0.5rem 0.95rem;
     border-radius: 999px;
     border: 1px solid transparent;
     color: var(--muted);
+    font-family: inherit;
     font-size: 0.88rem;
     cursor: pointer;
+    background: transparent;
     transition: color 0.15s, border-color 0.15s, background 0.15s;
     text-decoration: none;
   }
-  nav a:hover { color: var(--fg); text-decoration: none; }
-  nav a.active {
-    color: var(--fg);
-    border-color: var(--border);
-  }
+  nav a:hover, nav button:hover { color: var(--fg); text-decoration: none; }
+  nav a.active { color: var(--fg); border-color: var(--border); }
   nav a.cta {
     background: var(--accent);
     color: #0b0d12;
@@ -71,7 +77,6 @@
   }
   nav a.cta:hover { color: #0b0d12; }
 
-  /* Layout */
   main { padding: 2rem 1.75rem 4rem; display: grid; place-items: start center; }
   .page { width: min(980px, 100%); }
   .label {
@@ -82,7 +87,6 @@
   }
   .hidden { display: none !important; }
 
-  /* Hero / numbers */
   .hero { text-align: center; padding: 2.5rem 0 2rem; }
   h1 {
     font-size: clamp(2rem, 5vw, 3.2rem);
@@ -100,12 +104,6 @@
     color: var(--accent);
     font-variant-numeric: tabular-nums;
   }
-  .big.pulse { animation: pulse 0.4s ease-out; }
-  @keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.03); }
-    100% { transform: scale(1); }
-  }
   .stats { display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; }
   .stat .n {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -121,7 +119,6 @@
   }
   .status { margin-top: 2.5rem; text-align: center; font-size: 0.85rem; color: var(--muted); }
 
-  /* CTAs */
   .ctas { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-top: 1rem; }
   .btn {
     padding: 0.8rem 1.4rem;
@@ -139,8 +136,9 @@
   .btn.primary { background: var(--accent); color: #0b0d12; border-color: var(--accent); font-weight: 600; }
   .btn.primary:hover { filter: brightness(1.05); }
   .btn.danger { border-color: var(--danger); color: var(--danger); }
+  .btn.danger:hover { background: rgba(255, 107, 107, 0.08); }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
 
-  /* How-it-works */
   .how { margin-top: 4rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
   .how .card {
     background: var(--panel);
@@ -151,7 +149,6 @@
   .how .card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
   .how .card p { margin: 0; color: var(--muted-2); font-size: 0.9rem; line-height: 1.5; }
 
-  /* Forms */
   .form {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -171,10 +168,11 @@
     border: 1px solid var(--border);
     background: #0c1016;
     color: var(--fg);
-    font-family: ui-monospace, monospace;
+    font-family: inherit;
     font-size: 0.95rem;
     width: 100%;
   }
+  .form input[type="password"], .form input.mono { font-family: ui-monospace, monospace; }
   .form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .form .row { display: grid; gap: 0.3rem; }
   .form .err { color: var(--danger); font-size: 0.9rem; min-height: 1.2em; }
@@ -191,7 +189,7 @@
     user-select: all;
   }
   .warn {
-    border: 1px solid #cb8f2e;
+    border: 1px solid var(--warn);
     background: rgba(203, 143, 46, 0.08);
     padding: 0.9rem 1rem;
     border-radius: 8px;
@@ -199,7 +197,6 @@
     color: #f3c87c;
   }
 
-  /* Leaderboard table */
   .board { width: 100%; border-collapse: collapse; margin-top: 1rem; }
   .board th, .board td {
     padding: 0.85rem 1rem;
@@ -227,14 +224,20 @@
     font-size: 0.95rem;
   }
 
-  /* Dashboard */
   .me-hdr { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
   .me-hdr .who { font-size: 1.1rem; }
   .me-hdr .who .h { font-family: ui-monospace, monospace; color: var(--accent); }
   .inline-form { display: flex; gap: 0.5rem; align-items: center; }
   .inline-form input { width: 180px; padding: 0.55rem 0.8rem; font-size: 0.85rem; border-radius: 8px; border: 1px solid var(--border); background: #0c1016; color: var(--fg); font-family: ui-monospace, monospace; }
   .inline-form .btn { padding: 0.55rem 0.9rem; font-size: 0.85rem; }
-  .tiny-note { font-size: 0.8rem; color: var(--muted); }
+
+  .tokens-section {
+    margin-top: 3rem;
+    border-top: 1px solid var(--border);
+    padding-top: 2rem;
+  }
+  .tokens-section h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+  .tokens-section p { margin: 0 0 1rem; color: var(--muted-2); font-size: 0.9rem; }
 </style>
 </head>
 <body>
@@ -262,15 +265,15 @@
     <div class="how">
       <div class="card">
         <h3>1. register</h3>
-        <p>get a bearer token — paste it into your Claude Code <code>settings.json</code>.</p>
+        <p>email + password. you'll get a one-time ingest token for Claude Code.</p>
       </div>
       <div class="card">
-        <h3>2. use Claude Code</h3>
-        <p>telemetry flows automatically. no content, just token counts and costs.</p>
+        <h3>2. paste the token into settings.json</h3>
+        <p>telemetry flows automatically. no prompts, no code, just token counts + cost.</p>
       </div>
       <div class="card">
-        <h3>3. watch the dashboard</h3>
-        <p>your personal totals + a public leaderboard update in near real time.</p>
+        <h3>3. watch your dashboard + leaderboard</h3>
+        <p>your personal totals and a public leaderboard update in near real time.</p>
       </div>
     </div>
   </section>
@@ -281,18 +284,9 @@
       <div class="label">total equivalent api spend (all users)</div>
       <div id="totals-cost" class="big">$0.00</div>
       <div class="stats">
-        <div class="stat">
-          <div id="totals-tokens" class="n">0</div>
-          <div class="l">billed tokens</div>
-        </div>
-        <div class="stat">
-          <div id="totals-requests" class="n">0</div>
-          <div class="l">requests</div>
-        </div>
-        <div class="stat">
-          <div id="totals-users" class="n">0</div>
-          <div class="l">users</div>
-        </div>
+        <div class="stat"><div id="totals-tokens" class="n">0</div><div class="l">billed tokens</div></div>
+        <div class="stat"><div id="totals-requests" class="n">0</div><div class="l">requests</div></div>
+        <div class="stat"><div id="totals-users" class="n">0</div><div class="l">users</div></div>
       </div>
       <div id="totals-status" class="status">connecting…</div>
     </div>
@@ -317,45 +311,81 @@
     </table>
   </section>
 
+  <!-- Setup guide (public) -->
+  <section id="view-setup" class="page hidden">
+    <div class="hero" style="padding: 2rem 0 1rem;">
+      <h1 style="font-size: clamp(1.5rem, 4vw, 2.3rem);">wire up Claude Code</h1>
+      <p class="tag">paste this into your Claude Code settings file and restart Claude Code. telemetry starts flowing within ~5 seconds.</p>
+    </div>
+    <div class="form" style="max-width: 680px;">
+      <div class="row">
+        <div class="label">settings.json</div>
+        <pre id="setup-snippet" class="token-display" style="font-size: 0.82rem; white-space: pre; line-height: 1.5;"></pre>
+      </div>
+      <div class="ctas" style="justify-content: flex-start;">
+        <button class="btn primary" id="setup-copy" type="button">copy snippet</button>
+        <a class="btn" href="#/register" id="setup-register-link">get a token</a>
+      </div>
+      <div class="row" style="margin-top: 0.5rem;">
+        <div class="label">where to put it</div>
+        <ul style="margin: 0; padding-left: 1.25rem; color: var(--muted-2); font-size: 0.9rem; line-height: 1.7;">
+          <li>macOS / Linux: <code>~/.claude/settings.json</code></li>
+          <li>Windows: <code>%USERPROFILE%\.claude\settings.json</code></li>
+        </ul>
+      </div>
+      <div class="warn">replace <code>&lt;your-ingest-token&gt;</code> with the token from your registration. if an <code>env</code> block already exists in your settings, merge these keys into it.</div>
+    </div>
+  </section>
+
   <!-- Register -->
   <section id="view-register" class="page hidden">
-    <form class="form" id="form-register" autocomplete="off">
+    <form class="form" id="form-register" autocomplete="on">
       <h2>create an account</h2>
-      <p class="sub">you'll get a bearer token for Claude Code's <code>settings.json</code>.</p>
+      <p class="sub">email and password sign you into the dashboard. you'll also get a separate ingest token for Claude Code.</p>
       <div class="row">
-        <label for="reg-username">username (optional, public)</label>
-        <input id="reg-username" type="text" maxlength="32" placeholder="e.g. matthew">
+        <label for="reg-email">email</label>
+        <input id="reg-email" type="email" required autocomplete="email" maxlength="254">
       </div>
       <div class="row">
-        <label for="reg-email">email (optional, private)</label>
-        <input id="reg-email" type="email" placeholder="used for account recovery later">
+        <label for="reg-password">password (8+ characters)</label>
+        <input id="reg-password" type="password" required autocomplete="new-password" minlength="8" maxlength="128">
+      </div>
+      <div class="row">
+        <label for="reg-username">username (optional, public)</label>
+        <input id="reg-username" type="text" maxlength="32" placeholder="shown on the leaderboard">
       </div>
       <div id="reg-err" class="err"></div>
       <button class="btn primary" type="submit">register</button>
-      <div class="foot">already have a token? <a href="#/login">log in</a></div>
+      <div class="foot">already have an account? <a href="#/login">log in</a></div>
     </form>
 
-    <div id="reg-done" class="form hidden">
-      <h2>saved — copy your token</h2>
-      <p class="sub">shown once. save it somewhere safe.</p>
+    <div id="reg-done" class="form hidden" style="max-width: 640px;">
+      <h2>saved — copy your ingest token</h2>
+      <p class="sub">this token goes into Claude Code's <code>settings.json</code> so telemetry reaches this account. it's shown once.</p>
       <div id="reg-token" class="token-display"></div>
-      <div class="warn">if you lose this token you can't recover it. you'd need to register a new account.</div>
+      <div class="warn">you can't retrieve this token later. save it now, or rotate a new one from the dashboard.</div>
+      <div class="label" style="margin-top: 0.5rem;">full settings.json snippet (token already inserted)</div>
+      <pre id="reg-snippet" class="token-display" style="font-size: 0.78rem; white-space: pre; line-height: 1.5;"></pre>
       <div class="ctas">
-        <button class="btn primary" id="reg-copy">copy token</button>
-        <a class="btn" id="reg-continue" href="#/me">continue to dashboard</a>
+        <button class="btn" id="reg-copy" type="button">copy token</button>
+        <button class="btn primary" id="reg-copy-snippet" type="button">copy full snippet</button>
+        <a class="btn" href="#/me">continue to dashboard</a>
       </div>
-      <div class="tiny-note">we've also stored it in your browser's localStorage so you're logged in automatically.</div>
     </div>
   </section>
 
   <!-- Login -->
   <section id="view-login" class="page hidden">
-    <form class="form" id="form-login" autocomplete="off">
+    <form class="form" id="form-login" autocomplete="on">
       <h2>log in</h2>
-      <p class="sub">paste your bearer token.</p>
+      <p class="sub">to your tokentracker dashboard.</p>
       <div class="row">
-        <label for="login-token">token</label>
-        <input id="login-token" type="password" placeholder="starts with random letters/digits">
+        <label for="login-email">email</label>
+        <input id="login-email" type="email" required autocomplete="email">
+      </div>
+      <div class="row">
+        <label for="login-password">password</label>
+        <input id="login-password" type="password" required autocomplete="current-password">
       </div>
       <div id="login-err" class="err"></div>
       <button class="btn primary" type="submit">log in</button>
@@ -363,12 +393,12 @@
     </form>
   </section>
 
-  <!-- Dashboard (authed) -->
+  <!-- Dashboard (authed via cookie) -->
   <section id="view-me" class="page hidden">
     <div class="me-hdr">
       <div class="who">signed in as <span class="h" id="me-handle">…</span></div>
       <div class="inline-form">
-        <input id="me-username" type="text" maxlength="32" placeholder="set a username">
+        <input id="me-username" type="text" maxlength="32" placeholder="set / change username">
         <button class="btn" id="me-save-username" type="button">save</button>
       </div>
     </div>
@@ -378,16 +408,29 @@
       <div class="label">your equivalent api spend</div>
       <div id="me-cost" class="big">$0.00</div>
       <div class="stats">
-        <div class="stat">
-          <div id="me-tokens" class="n">0</div>
-          <div class="l">billed tokens</div>
-        </div>
-        <div class="stat">
-          <div id="me-requests" class="n">0</div>
-          <div class="l">requests</div>
-        </div>
+        <div class="stat"><div id="me-tokens" class="n">0</div><div class="l">billed tokens</div></div>
+        <div class="stat"><div id="me-requests" class="n">0</div><div class="l">requests</div></div>
       </div>
       <div id="me-status" class="status">loading…</div>
+    </div>
+
+    <div class="tokens-section">
+      <h3>ingest token</h3>
+      <p>rotate if leaked. the old token stops working immediately; you'll need to update Claude Code's <code>settings.json</code> with the new one and restart.</p>
+      <div class="ctas" style="justify-content: flex-start;">
+        <button class="btn danger" id="me-rotate" type="button">rotate ingest token</button>
+      </div>
+      <div id="me-new-token-wrap" class="hidden" style="margin-top: 1rem; max-width: 640px;">
+        <div class="label" style="margin-bottom: 0.5rem;">new ingest token — save it now</div>
+        <div id="me-new-token" class="token-display"></div>
+        <div class="warn" style="margin-top: 0.75rem;">shown once. copy before navigating away.</div>
+        <div class="label" style="margin-top: 1rem; margin-bottom: 0.5rem;">settings.json snippet (new token inserted)</div>
+        <pre id="me-new-snippet" class="token-display" style="font-size: 0.78rem; white-space: pre; line-height: 1.5;"></pre>
+        <div class="ctas" style="justify-content: flex-start; margin-top: 0.75rem;">
+          <button class="btn" id="me-copy-new" type="button">copy token</button>
+          <button class="btn primary" id="me-copy-new-snippet" type="button">copy full snippet</button>
+        </div>
+      </div>
     </div>
   </section>
 </main>
@@ -405,94 +448,117 @@
 
   const POLL_MS = 2000;
   const LANDING_POLL_MS = 5000;
+  const TICK_MS = 900; // duration of the count-up animation
+
   const state = {
-    token: localStorage.getItem('tt_token'),
-    username: null,
+    loggedIn: false,
     userId: null,
+    username: null,
     pollers: [],
-    lastCost: {},
+    rafs: [],
   };
 
+  // Animated counter: tweens from the last shown value to the next one.
+  // ease-out cubic, so it starts fast and settles.
+  function makeTicker(el, fmt) {
+    let current = null;
+    let rafId = null;
+    const ease = t => 1 - Math.pow(1 - t, 3);
+    return function update(next) {
+      if (current === null) {
+        current = next;
+        el.textContent = fmt(next);
+        return;
+      }
+      if (next === current) return;
+      if (rafId != null) cancelAnimationFrame(rafId);
+      const from = current;
+      const to = next;
+      const start = performance.now();
+      const step = now => {
+        const t = Math.min(1, (now - start) / TICK_MS);
+        const v = from + (to - from) * ease(t);
+        current = v;
+        el.textContent = fmt(v);
+        if (t < 1) {
+          rafId = requestAnimationFrame(step);
+          state.rafs.push(rafId);
+        } else {
+          current = to;
+          el.textContent = fmt(to);
+          rafId = null;
+        }
+      };
+      rafId = requestAnimationFrame(step);
+      state.rafs.push(rafId);
+    };
+  }
+  const usdTicker = el => makeTicker(el, v => fmtUsd.format(v));
+  const intTicker = el => makeTicker(el, v => fmtInt.format(Math.round(v)));
+
+  const fetchOpts = (opts = {}) => ({ credentials: 'same-origin', cache: 'no-store', ...opts });
+
   async function fetchJson(url, opts = {}) {
-    const r = await fetch(url, { cache: 'no-store', ...opts });
+    const r = await fetch(url, fetchOpts(opts));
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
-      throw Object.assign(new Error(r.status + ': ' + (txt || r.statusText)), { status: r.status });
+      let detail = txt;
+      try { detail = JSON.parse(txt).detail || txt; } catch {}
+      throw Object.assign(new Error(detail || r.statusText), { status: r.status });
     }
     return r.json();
   }
-  const authHeaders = () => state.token ? { Authorization: 'Bearer ' + state.token } : {};
 
   function clearPollers() {
     state.pollers.forEach(clearInterval);
     state.pollers = [];
+    state.rafs.forEach(cancelAnimationFrame);
+    state.rafs = [];
   }
-  function poll(fn, ms) {
-    fn();
-    state.pollers.push(setInterval(fn, ms));
-  }
-
-  function pulse(el, key) {
-    // Fire only on increase
-    return cost => {
-      if (state.lastCost[key] != null && cost > state.lastCost[key]) {
-        el.classList.remove('pulse');
-        void el.offsetWidth;
-        el.classList.add('pulse');
-      }
-      state.lastCost[key] = cost;
-    };
-  }
-
-  // View renderers
-  const views = {
-    '': renderLanding,
-    '/': renderLanding,
-    '/totals': renderTotals,
-    '/leaderboard': renderLeaderboard,
-    '/register': renderRegister,
-    '/login': renderLogin,
-    '/me': renderMe,
-  };
+  function poll(fn, ms) { fn(); state.pollers.push(setInterval(fn, ms)); }
 
   function showOnly(sectionId) {
     for (const s of document.querySelectorAll('main > section')) s.classList.add('hidden');
     $(sectionId).classList.remove('hidden');
   }
 
+  async function copy(text, btn, done = 'copied ✓', orig = 'copy token') {
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = done;
+      setTimeout(() => btn.textContent = orig, 1500);
+    } catch { /* ignore */ }
+  }
+
+  // --- views ---
   function renderLanding() {
     showOnly('view-landing');
-    const costEl = $('landing-cost');
-    const onUpdate = pulse(costEl, 'landing');
+    const tickCost = usdTicker($('landing-cost'));
     poll(async () => {
       try {
         const d = await fetchJson('/stats/totals');
-        const cost = Number(d.total_cost_usd || 0);
-        costEl.textContent = fmtUsd.format(cost);
-        onUpdate(cost);
-      } catch { /* ignore */ }
+        tickCost(Number(d.total_cost_usd || 0));
+      } catch { /* ignore on landing */ }
     }, LANDING_POLL_MS);
   }
 
   function renderTotals() {
     showOnly('view-totals');
-    const costEl = $('totals-cost');
-    const onUpdate = pulse(costEl, 'totals');
+    const tickCost = usdTicker($('totals-cost'));
+    const tickTokens = intTicker($('totals-tokens'));
+    const tickRequests = intTicker($('totals-requests'));
+    const tickUsers = intTicker($('totals-users'));
     poll(async () => {
       try {
         const d = await fetchJson('/stats/totals');
-        const cost = Number(d.total_cost_usd || 0);
-        costEl.textContent = fmtUsd.format(cost);
-        $('totals-tokens').textContent = fmtInt.format(d.billed_tokens || 0);
-        $('totals-requests').textContent = fmtInt.format(d.total_requests || 0);
-        $('totals-users').textContent = fmtInt.format(d.total_users || 0);
+        tickCost(Number(d.total_cost_usd || 0));
+        tickTokens(d.billed_tokens || 0);
+        tickRequests(d.total_requests || 0);
+        tickUsers(d.total_users || 0);
         $('totals-status').textContent = d.last_activity_at
           ? 'last event ' + new Date(d.last_activity_at).toLocaleString()
           : 'waiting for first event…';
-        onUpdate(cost);
-      } catch (e) {
-        $('totals-status').textContent = 'error: ' + e.message;
-      }
+      } catch (e) { $('totals-status').textContent = 'error: ' + e.message; }
     }, POLL_MS);
   }
 
@@ -522,73 +588,102 @@
   }
 
   function renderRegister() {
+    if (state.loggedIn) { location.hash = '#/me'; return; }
     showOnly('view-register');
     $('form-register').classList.remove('hidden');
     $('reg-done').classList.add('hidden');
     $('reg-err').textContent = '';
-    $('reg-username').value = '';
-    $('reg-email').value = '';
+    $('form-register').reset();
   }
 
   function renderLogin() {
+    if (state.loggedIn) { location.hash = '#/me'; return; }
     showOnly('view-login');
     $('login-err').textContent = '';
-    $('login-token').value = '';
-    setTimeout(() => $('login-token').focus(), 0);
+    $('form-login').reset();
+    setTimeout(() => $('login-email').focus(), 0);
   }
 
-  async function renderMe() {
-    if (!state.token) { location.hash = '#/login'; return; }
+  function renderMe() {
+    if (!state.loggedIn) { location.hash = '#/login'; return; }
     showOnly('view-me');
-    const costEl = $('me-cost');
-    const onUpdate = pulse(costEl, 'me');
+    $('me-new-token-wrap').classList.add('hidden');
+    const tickCost = usdTicker($('me-cost'));
+    const tickTokens = intTicker($('me-tokens'));
+    const tickRequests = intTicker($('me-requests'));
     poll(async () => {
       try {
-        const d = await fetchJson('/usage/me', { headers: authHeaders() });
+        const d = await fetchJson('/usage/me');
         state.userId = d.user_id;
         state.username = d.username;
         $('me-handle').textContent = d.username || ('user ' + d.user_id);
-        const cost = Number(d.total_cost_usd || 0);
-        costEl.textContent = fmtUsd.format(cost);
-        $('me-tokens').textContent = fmtInt.format(d.billed_tokens || 0);
-        $('me-requests').textContent = fmtInt.format(d.requests || 0);
+        tickCost(Number(d.total_cost_usd || 0));
+        tickTokens(d.billed_tokens || 0);
+        tickRequests(d.requests || 0);
         $('me-status').textContent = d.last_activity_at
           ? 'last event ' + new Date(d.last_activity_at).toLocaleString()
           : 'waiting for your first event…';
-        onUpdate(cost);
       } catch (e) {
-        if (e.status === 401) {
-          logout();
-          location.hash = '#/login';
-          return;
-        }
+        if (e.status === 401) { state.loggedIn = false; location.hash = '#/login'; return; }
         $('me-status').textContent = 'error: ' + e.message;
       }
     }, POLL_MS);
   }
 
-  // Nav
+  function buildSettingsSnippet(token) {
+    return [
+      '{',
+      '  "env": {',
+      '    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",',
+      '    "OTEL_METRICS_EXPORTER": "otlp",',
+      '    "OTEL_LOGS_EXPORTER": "otlp",',
+      '    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",',
+      '    "OTEL_EXPORTER_OTLP_ENDPOINT": "' + location.origin + '",',
+      '    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer ' + token + '"',
+      '  }',
+      '}',
+    ].join('\n');
+  }
+
+  function renderSetup() {
+    showOnly('view-setup');
+    $('setup-snippet').textContent = buildSettingsSnippet('<your-ingest-token>');
+  }
+
+  const views = {
+    '':            renderLanding,
+    '/':           renderLanding,
+    '/totals':     renderTotals,
+    '/leaderboard':renderLeaderboard,
+    '/setup':      renderSetup,
+    '/register':   renderRegister,
+    '/login':      renderLogin,
+    '/me':         renderMe,
+  };
+
+  // --- nav ---
   function renderNav() {
     const nav = $('nav');
-    const loggedIn = !!state.token;
-    const links = loggedIn
+    const links = state.loggedIn
       ? [
-          { href: '#/',             label: 'home' },
-          { href: '#/totals',       label: 'totals' },
-          { href: '#/leaderboard',  label: 'leaderboard' },
-          { href: '#/me',           label: 'dashboard' },
-          { href: '#logout',        label: 'log out' },
+          { href: '#/',            label: 'home' },
+          { href: '#/totals',      label: 'totals' },
+          { href: '#/leaderboard', label: 'leaderboard' },
+          { href: '#/setup',       label: 'setup' },
+          { href: '#/me',          label: 'dashboard' },
+          { href: '#logout',       label: 'log out' },
         ]
       : [
-          { href: '#/',             label: 'home' },
-          { href: '#/totals',       label: 'totals' },
-          { href: '#/leaderboard',  label: 'leaderboard' },
-          { href: '#/login',        label: 'log in' },
-          { href: '#/register',     label: 'register', cta: true },
+          { href: '#/',            label: 'home' },
+          { href: '#/totals',      label: 'totals' },
+          { href: '#/leaderboard', label: 'leaderboard' },
+          { href: '#/setup',       label: 'setup' },
+          { href: '#/login',       label: 'log in' },
+          { href: '#/register',    label: 'register', cta: true },
         ];
-    const hash = location.hash.slice(1) || '/';
+    const path = location.hash.slice(1) || '/';
     nav.innerHTML = links.map(l => {
-      const active = l.href === '#' + hash || (hash === '' && l.href === '#/');
+      const active = l.href === '#' + path;
       const cls = [];
       if (active) cls.push('active');
       if (l.cta) cls.push('cta');
@@ -596,76 +691,62 @@
     }).join('');
   }
 
-  // Auth
-  async function validateToken(token) {
-    const r = await fetch('/usage/me', {
-      cache: 'no-store',
-      headers: { Authorization: 'Bearer ' + token },
-    });
-    if (!r.ok) throw Object.assign(new Error('invalid'), { status: r.status });
-    return r.json();
-  }
-
-  function logout() {
-    state.token = null;
-    state.username = null;
-    state.userId = null;
-    localStorage.removeItem('tt_token');
-  }
-
-  // Forms
+  // --- forms ---
   $('form-register').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const username = $('reg-username').value.trim() || null;
-    const email = $('reg-email').value.trim() || null;
     $('reg-err').textContent = '';
+    const email = $('reg-email').value.trim();
+    const password = $('reg-password').value;
+    const username = $('reg-username').value.trim() || null;
     try {
-      const r = await fetch('/register', {
+      const d = await fetchJson('/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email }),
+        body: JSON.stringify({ email, password, username }),
       });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error(body.detail || ('http ' + r.status));
-      }
-      const d = await r.json();
-      state.token = d.token;
-      state.username = d.username;
+      state.loggedIn = true;
       state.userId = d.user_id;
-      localStorage.setItem('tt_token', d.token);
+      state.username = d.username;
       $('form-register').classList.add('hidden');
       $('reg-done').classList.remove('hidden');
-      $('reg-token').textContent = d.token;
+      $('reg-token').textContent = d.ingest_token;
+      $('reg-snippet').textContent = buildSettingsSnippet(d.ingest_token);
       renderNav();
     } catch (err) {
-      $('reg-err').textContent = err.message;
+      $('reg-err').textContent = err.message || 'registration failed';
     }
   });
 
-  $('reg-copy').addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText($('reg-token').textContent);
-      $('reg-copy').textContent = 'copied ✓';
-      setTimeout(() => $('reg-copy').textContent = 'copy token', 1500);
-    } catch { /* ignore */ }
+  $('reg-copy').addEventListener('click', () => {
+    copy($('reg-token').textContent, $('reg-copy'), 'copied ✓', 'copy token');
+  });
+
+  $('reg-copy-snippet').addEventListener('click', () => {
+    copy($('reg-snippet').textContent, $('reg-copy-snippet'), 'copied ✓', 'copy full snippet');
+  });
+
+  $('setup-copy').addEventListener('click', () => {
+    copy($('setup-snippet').textContent, $('setup-copy'), 'copied ✓', 'copy snippet');
   });
 
   $('form-login').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const token = $('login-token').value.trim();
     $('login-err').textContent = '';
-    if (!token) { $('login-err').textContent = 'token required'; return; }
+    const email = $('login-email').value.trim();
+    const password = $('login-password').value;
     try {
-      const d = await validateToken(token);
-      state.token = token;
-      state.username = d.username;
+      const d = await fetchJson('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      state.loggedIn = true;
       state.userId = d.user_id;
-      localStorage.setItem('tt_token', token);
+      state.username = d.username;
       renderNav();
       location.hash = '#/me';
     } catch (err) {
-      $('login-err').textContent = err.status === 401 ? 'invalid token' : err.message;
+      $('login-err').textContent = err.status === 401 ? 'invalid email or password' : (err.message || 'login failed');
     }
   });
 
@@ -674,52 +755,70 @@
     $('me-username-err').textContent = '';
     if (!username) { $('me-username-err').textContent = 'username required'; return; }
     try {
-      const r = await fetch('/me/username', {
+      const d = await fetchJson('/me/username', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username }),
       });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error(body.detail || ('http ' + r.status));
-      }
-      const d = await r.json();
       state.username = d.username;
       $('me-handle').textContent = d.username;
       $('me-username').value = '';
     } catch (err) {
-      $('me-username-err').textContent = err.message;
+      $('me-username-err').textContent = err.message || 'failed';
     }
+  });
+
+  $('me-rotate').addEventListener('click', async () => {
+    if (!confirm('rotate ingest token? the old one stops working immediately.')) return;
+    try {
+      const d = await fetchJson('/me/ingest-token/rotate', { method: 'POST' });
+      $('me-new-token').textContent = d.ingest_token;
+      $('me-new-snippet').textContent = buildSettingsSnippet(d.ingest_token);
+      $('me-new-token-wrap').classList.remove('hidden');
+    } catch (err) {
+      alert('rotate failed: ' + (err.message || ''));
+    }
+  });
+
+  $('me-copy-new').addEventListener('click', () => {
+    copy($('me-new-token').textContent, $('me-copy-new'), 'copied ✓', 'copy token');
+  });
+
+  $('me-copy-new-snippet').addEventListener('click', () => {
+    copy($('me-new-snippet').textContent, $('me-copy-new-snippet'), 'copied ✓', 'copy full snippet');
   });
 
   $('brand').addEventListener('click', () => location.hash = '#/');
 
-  // Router
-  function route() {
+  async function doLogout() {
+    try { await fetchJson('/logout', { method: 'POST' }); } catch {}
+    state.loggedIn = false;
+    state.userId = null;
+    state.username = null;
+  }
+
+  // --- router ---
+  async function route() {
     clearPollers();
     if (location.hash === '#logout') {
-      logout();
+      await doLogout();
       location.hash = '#/';
       return;
     }
     const path = location.hash.slice(1) || '/';
-    const view = views[path] || views['/'];
-    view();
+    (views[path] || views['/'])();
     renderNav();
   }
   window.addEventListener('hashchange', route);
 
-  // Boot: validate existing token if present, then route
+  // --- boot ---
   (async () => {
-    if (state.token) {
-      try {
-        const d = await validateToken(state.token);
-        state.username = d.username;
-        state.userId = d.user_id;
-      } catch {
-        logout();
-      }
-    }
+    try {
+      const me = await fetchJson('/me');
+      state.loggedIn = true;
+      state.userId = me.user_id;
+      state.username = me.username;
+    } catch { /* not logged in */ }
     route();
   })();
 })();
