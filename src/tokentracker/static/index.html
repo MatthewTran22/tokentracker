@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>tokentracker</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d12;
+    --panel: #10141b;
+    --fg: #e7ecf3;
+    --muted: #6b7280;
+    --muted-2: #9aa3b2;
+    --border: #2a2f3a;
+    --accent: #7cdcaf;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    min-height: 100%;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Header / nav */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.1rem 1.75rem;
+    border-bottom: 1px solid var(--border);
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .brand {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .brand::before { content: "▲ "; color: var(--accent); }
+  nav { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  nav a {
+    padding: 0.5rem 0.95rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    color: var(--muted);
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    text-decoration: none;
+  }
+  nav a:hover { color: var(--fg); text-decoration: none; }
+  nav a.active {
+    color: var(--fg);
+    border-color: var(--border);
+  }
+  nav a.cta {
+    background: var(--accent);
+    color: #0b0d12;
+    font-weight: 600;
+  }
+  nav a.cta:hover { color: #0b0d12; }
+
+  /* Layout */
+  main { padding: 2rem 1.75rem 4rem; display: grid; place-items: start center; }
+  .page { width: min(980px, 100%); }
+  .label {
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+  .hidden { display: none !important; }
+
+  /* Hero / numbers */
+  .hero { text-align: center; padding: 2.5rem 0 2rem; }
+  h1 {
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    line-height: 1.1;
+    margin: 0 0 0.75rem;
+    letter-spacing: -0.01em;
+  }
+  .tag { color: var(--muted-2); font-size: 1.05rem; max-width: 42rem; margin: 0 auto 2rem; }
+  .big {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: clamp(3.5rem, 12vw, 8rem);
+    font-weight: 600;
+    line-height: 1;
+    margin: 0.5rem 0 2rem;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .big.pulse { animation: pulse 0.4s ease-out; }
+  @keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.03); }
+    100% { transform: scale(1); }
+  }
+  .stats { display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; }
+  .stat .n {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1.5rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .l {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-top: 0.35rem;
+  }
+  .status { margin-top: 2.5rem; text-align: center; font-size: 0.85rem; color: var(--muted); }
+
+  /* CTAs */
+  .ctas { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-top: 1rem; }
+  .btn {
+    padding: 0.8rem 1.4rem;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--fg);
+    font-family: inherit;
+    font-weight: 500;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent); color: #0b0d12; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.05); }
+  .btn.danger { border-color: var(--danger); color: var(--danger); }
+
+  /* How-it-works */
+  .how { margin-top: 4rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+  .how .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+  }
+  .how .card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+  .how .card p { margin: 0; color: var(--muted-2); font-size: 0.9rem; line-height: 1.5; }
+
+  /* Forms */
+  .form {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 2rem;
+    max-width: 460px;
+    margin: 2rem auto 0;
+    display: grid;
+    gap: 1rem;
+  }
+  .form h2 { margin: 0; font-size: 1.3rem; }
+  .form p.sub { margin: -0.5rem 0 0.5rem; color: var(--muted-2); font-size: 0.92rem; }
+  .form label { font-size: 0.8rem; color: var(--muted); }
+  .form input {
+    padding: 0.8rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #0c1016;
+    color: var(--fg);
+    font-family: ui-monospace, monospace;
+    font-size: 0.95rem;
+    width: 100%;
+  }
+  .form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .form .row { display: grid; gap: 0.3rem; }
+  .form .err { color: var(--danger); font-size: 0.9rem; min-height: 1.2em; }
+  .form .foot { font-size: 0.88rem; color: var(--muted-2); text-align: center; }
+
+  .token-display {
+    font-family: ui-monospace, monospace;
+    font-size: 0.85rem;
+    background: #0c1016;
+    border: 1px solid var(--border);
+    padding: 0.9rem;
+    border-radius: 8px;
+    word-break: break-all;
+    user-select: all;
+  }
+  .warn {
+    border: 1px solid #cb8f2e;
+    background: rgba(203, 143, 46, 0.08);
+    padding: 0.9rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: #f3c87c;
+  }
+
+  /* Leaderboard table */
+  .board { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  .board th, .board td {
+    padding: 0.85rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  .board th {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 500;
+  }
+  .board td.num, .board th.num { text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .board tr.top td.rank { color: var(--accent); font-weight: 600; }
+  .board tr.me td { background: rgba(124, 220, 175, 0.06); }
+  .board td.rank { width: 3rem; color: var(--muted); }
+  .board td.handle { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 3rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  /* Dashboard */
+  .me-hdr { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .me-hdr .who { font-size: 1.1rem; }
+  .me-hdr .who .h { font-family: ui-monospace, monospace; color: var(--accent); }
+  .inline-form { display: flex; gap: 0.5rem; align-items: center; }
+  .inline-form input { width: 180px; padding: 0.55rem 0.8rem; font-size: 0.85rem; border-radius: 8px; border: 1px solid var(--border); background: #0c1016; color: var(--fg); font-family: ui-monospace, monospace; }
+  .inline-form .btn { padding: 0.55rem 0.9rem; font-size: 0.85rem; }
+  .tiny-note { font-size: 0.8rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand" id="brand">tokentracker</div>
+  <nav id="nav"></nav>
+</header>
+
+<main>
+  <!-- Landing -->
+  <section id="view-landing" class="page hidden">
+    <div class="hero">
+      <h1>see what your AI coding subscription is really worth</h1>
+      <p class="tag">tokentracker ingests Claude Code telemetry and shows your equivalent API spend — so you can answer the question: is my subscription paying for itself?</p>
+      <div class="label">combined spend across everyone tracked</div>
+      <div id="landing-cost" class="big">$0.00</div>
+      <div class="ctas">
+        <a class="btn primary" href="#/register">create an account</a>
+        <a class="btn" href="#/login">log in</a>
+        <a class="btn" href="#/leaderboard">view leaderboard</a>
+      </div>
+    </div>
+
+    <div class="how">
+      <div class="card">
+        <h3>1. register</h3>
+        <p>get a bearer token — paste it into your Claude Code <code>settings.json</code>.</p>
+      </div>
+      <div class="card">
+        <h3>2. use Claude Code</h3>
+        <p>telemetry flows automatically. no content, just token counts and costs.</p>
+      </div>
+      <div class="card">
+        <h3>3. watch the dashboard</h3>
+        <p>your personal totals + a public leaderboard update in near real time.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Totals (public) -->
+  <section id="view-totals" class="page hidden">
+    <div class="hero">
+      <div class="label">total equivalent api spend (all users)</div>
+      <div id="totals-cost" class="big">$0.00</div>
+      <div class="stats">
+        <div class="stat">
+          <div id="totals-tokens" class="n">0</div>
+          <div class="l">billed tokens</div>
+        </div>
+        <div class="stat">
+          <div id="totals-requests" class="n">0</div>
+          <div class="l">requests</div>
+        </div>
+        <div class="stat">
+          <div id="totals-users" class="n">0</div>
+          <div class="l">users</div>
+        </div>
+      </div>
+      <div id="totals-status" class="status">connecting…</div>
+    </div>
+  </section>
+
+  <!-- Leaderboard (public) -->
+  <section id="view-leaderboard" class="page hidden">
+    <div class="label" style="margin-top: 1rem">ranked by equivalent api spend</div>
+    <table class="board">
+      <thead>
+        <tr>
+          <th class="rank">#</th>
+          <th>handle</th>
+          <th class="num">cost</th>
+          <th class="num">billed</th>
+          <th class="num">requests</th>
+        </tr>
+      </thead>
+      <tbody id="board-body">
+        <tr><td colspan="5" class="empty">loading…</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Register -->
+  <section id="view-register" class="page hidden">
+    <form class="form" id="form-register" autocomplete="off">
+      <h2>create an account</h2>
+      <p class="sub">you'll get a bearer token for Claude Code's <code>settings.json</code>.</p>
+      <div class="row">
+        <label for="reg-username">username (optional, public)</label>
+        <input id="reg-username" type="text" maxlength="32" placeholder="e.g. matthew">
+      </div>
+      <div class="row">
+        <label for="reg-email">email (optional, private)</label>
+        <input id="reg-email" type="email" placeholder="used for account recovery later">
+      </div>
+      <div id="reg-err" class="err"></div>
+      <button class="btn primary" type="submit">register</button>
+      <div class="foot">already have a token? <a href="#/login">log in</a></div>
+    </form>
+
+    <div id="reg-done" class="form hidden">
+      <h2>saved — copy your token</h2>
+      <p class="sub">shown once. save it somewhere safe.</p>
+      <div id="reg-token" class="token-display"></div>
+      <div class="warn">if you lose this token you can't recover it. you'd need to register a new account.</div>
+      <div class="ctas">
+        <button class="btn primary" id="reg-copy">copy token</button>
+        <a class="btn" id="reg-continue" href="#/me">continue to dashboard</a>
+      </div>
+      <div class="tiny-note">we've also stored it in your browser's localStorage so you're logged in automatically.</div>
+    </div>
+  </section>
+
+  <!-- Login -->
+  <section id="view-login" class="page hidden">
+    <form class="form" id="form-login" autocomplete="off">
+      <h2>log in</h2>
+      <p class="sub">paste your bearer token.</p>
+      <div class="row">
+        <label for="login-token">token</label>
+        <input id="login-token" type="password" placeholder="starts with random letters/digits">
+      </div>
+      <div id="login-err" class="err"></div>
+      <button class="btn primary" type="submit">log in</button>
+      <div class="foot">no account? <a href="#/register">register</a></div>
+    </form>
+  </section>
+
+  <!-- Dashboard (authed) -->
+  <section id="view-me" class="page hidden">
+    <div class="me-hdr">
+      <div class="who">signed in as <span class="h" id="me-handle">…</span></div>
+      <div class="inline-form">
+        <input id="me-username" type="text" maxlength="32" placeholder="set a username">
+        <button class="btn" id="me-save-username" type="button">save</button>
+      </div>
+    </div>
+    <div id="me-username-err" class="err" style="text-align: right;"></div>
+
+    <div class="hero" style="padding-top: 1rem;">
+      <div class="label">your equivalent api spend</div>
+      <div id="me-cost" class="big">$0.00</div>
+      <div class="stats">
+        <div class="stat">
+          <div id="me-tokens" class="n">0</div>
+          <div class="l">billed tokens</div>
+        </div>
+        <div class="stat">
+          <div id="me-requests" class="n">0</div>
+          <div class="l">requests</div>
+        </div>
+      </div>
+      <div id="me-status" class="status">loading…</div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const fmtUsd = new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: 'USD',
+    minimumFractionDigits: 2, maximumFractionDigits: 4,
+  });
+  const fmtInt = new Intl.NumberFormat('en-US');
+  const $ = id => document.getElementById(id);
+  const escapeHtml = s => String(s).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const POLL_MS = 2000;
+  const LANDING_POLL_MS = 5000;
+  const state = {
+    token: localStorage.getItem('tt_token'),
+    username: null,
+    userId: null,
+    pollers: [],
+    lastCost: {},
+  };
+
+  async function fetchJson(url, opts = {}) {
+    const r = await fetch(url, { cache: 'no-store', ...opts });
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      throw Object.assign(new Error(r.status + ': ' + (txt || r.statusText)), { status: r.status });
+    }
+    return r.json();
+  }
+  const authHeaders = () => state.token ? { Authorization: 'Bearer ' + state.token } : {};
+
+  function clearPollers() {
+    state.pollers.forEach(clearInterval);
+    state.pollers = [];
+  }
+  function poll(fn, ms) {
+    fn();
+    state.pollers.push(setInterval(fn, ms));
+  }
+
+  function pulse(el, key) {
+    // Fire only on increase
+    return cost => {
+      if (state.lastCost[key] != null && cost > state.lastCost[key]) {
+        el.classList.remove('pulse');
+        void el.offsetWidth;
+        el.classList.add('pulse');
+      }
+      state.lastCost[key] = cost;
+    };
+  }
+
+  // View renderers
+  const views = {
+    '': renderLanding,
+    '/': renderLanding,
+    '/totals': renderTotals,
+    '/leaderboard': renderLeaderboard,
+    '/register': renderRegister,
+    '/login': renderLogin,
+    '/me': renderMe,
+  };
+
+  function showOnly(sectionId) {
+    for (const s of document.querySelectorAll('main > section')) s.classList.add('hidden');
+    $(sectionId).classList.remove('hidden');
+  }
+
+  function renderLanding() {
+    showOnly('view-landing');
+    const costEl = $('landing-cost');
+    const onUpdate = pulse(costEl, 'landing');
+    poll(async () => {
+      try {
+        const d = await fetchJson('/stats/totals');
+        const cost = Number(d.total_cost_usd || 0);
+        costEl.textContent = fmtUsd.format(cost);
+        onUpdate(cost);
+      } catch { /* ignore */ }
+    }, LANDING_POLL_MS);
+  }
+
+  function renderTotals() {
+    showOnly('view-totals');
+    const costEl = $('totals-cost');
+    const onUpdate = pulse(costEl, 'totals');
+    poll(async () => {
+      try {
+        const d = await fetchJson('/stats/totals');
+        const cost = Number(d.total_cost_usd || 0);
+        costEl.textContent = fmtUsd.format(cost);
+        $('totals-tokens').textContent = fmtInt.format(d.billed_tokens || 0);
+        $('totals-requests').textContent = fmtInt.format(d.total_requests || 0);
+        $('totals-users').textContent = fmtInt.format(d.total_users || 0);
+        $('totals-status').textContent = d.last_activity_at
+          ? 'last event ' + new Date(d.last_activity_at).toLocaleString()
+          : 'waiting for first event…';
+        onUpdate(cost);
+      } catch (e) {
+        $('totals-status').textContent = 'error: ' + e.message;
+      }
+    }, POLL_MS);
+  }
+
+  function renderLeaderboard() {
+    showOnly('view-leaderboard');
+    const body = $('board-body');
+    poll(async () => {
+      try {
+        const d = await fetchJson('/stats/leaderboard?limit=100');
+        if (!d.rows || d.rows.length === 0) {
+          body.innerHTML = '<tr><td colspan="5" class="empty">no users yet</td></tr>';
+          return;
+        }
+        body.innerHTML = d.rows.map(r => `
+          <tr class="${r.rank <= 3 ? 'top' : ''} ${r.user_id === state.userId ? 'me' : ''}">
+            <td class="rank">${r.rank}</td>
+            <td class="handle">${escapeHtml(r.handle)}</td>
+            <td class="num">${fmtUsd.format(r.total_cost_usd || 0)}</td>
+            <td class="num">${fmtInt.format(r.billed_tokens || 0)}</td>
+            <td class="num">${fmtInt.format(r.requests || 0)}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        body.innerHTML = `<tr><td colspan="5" class="empty">error: ${escapeHtml(e.message)}</td></tr>`;
+      }
+    }, POLL_MS);
+  }
+
+  function renderRegister() {
+    showOnly('view-register');
+    $('form-register').classList.remove('hidden');
+    $('reg-done').classList.add('hidden');
+    $('reg-err').textContent = '';
+    $('reg-username').value = '';
+    $('reg-email').value = '';
+  }
+
+  function renderLogin() {
+    showOnly('view-login');
+    $('login-err').textContent = '';
+    $('login-token').value = '';
+    setTimeout(() => $('login-token').focus(), 0);
+  }
+
+  async function renderMe() {
+    if (!state.token) { location.hash = '#/login'; return; }
+    showOnly('view-me');
+    const costEl = $('me-cost');
+    const onUpdate = pulse(costEl, 'me');
+    poll(async () => {
+      try {
+        const d = await fetchJson('/usage/me', { headers: authHeaders() });
+        state.userId = d.user_id;
+        state.username = d.username;
+        $('me-handle').textContent = d.username || ('user ' + d.user_id);
+        const cost = Number(d.total_cost_usd || 0);
+        costEl.textContent = fmtUsd.format(cost);
+        $('me-tokens').textContent = fmtInt.format(d.billed_tokens || 0);
+        $('me-requests').textContent = fmtInt.format(d.requests || 0);
+        $('me-status').textContent = d.last_activity_at
+          ? 'last event ' + new Date(d.last_activity_at).toLocaleString()
+          : 'waiting for your first event…';
+        onUpdate(cost);
+      } catch (e) {
+        if (e.status === 401) {
+          logout();
+          location.hash = '#/login';
+          return;
+        }
+        $('me-status').textContent = 'error: ' + e.message;
+      }
+    }, POLL_MS);
+  }
+
+  // Nav
+  function renderNav() {
+    const nav = $('nav');
+    const loggedIn = !!state.token;
+    const links = loggedIn
+      ? [
+          { href: '#/',             label: 'home' },
+          { href: '#/totals',       label: 'totals' },
+          { href: '#/leaderboard',  label: 'leaderboard' },
+          { href: '#/me',           label: 'dashboard' },
+          { href: '#logout',        label: 'log out' },
+        ]
+      : [
+          { href: '#/',             label: 'home' },
+          { href: '#/totals',       label: 'totals' },
+          { href: '#/leaderboard',  label: 'leaderboard' },
+          { href: '#/login',        label: 'log in' },
+          { href: '#/register',     label: 'register', cta: true },
+        ];
+    const hash = location.hash.slice(1) || '/';
+    nav.innerHTML = links.map(l => {
+      const active = l.href === '#' + hash || (hash === '' && l.href === '#/');
+      const cls = [];
+      if (active) cls.push('active');
+      if (l.cta) cls.push('cta');
+      return `<a href="${l.href}" class="${cls.join(' ')}">${l.label}</a>`;
+    }).join('');
+  }
+
+  // Auth
+  async function validateToken(token) {
+    const r = await fetch('/usage/me', {
+      cache: 'no-store',
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    if (!r.ok) throw Object.assign(new Error('invalid'), { status: r.status });
+    return r.json();
+  }
+
+  function logout() {
+    state.token = null;
+    state.username = null;
+    state.userId = null;
+    localStorage.removeItem('tt_token');
+  }
+
+  // Forms
+  $('form-register').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = $('reg-username').value.trim() || null;
+    const email = $('reg-email').value.trim() || null;
+    $('reg-err').textContent = '';
+    try {
+      const r = await fetch('/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.detail || ('http ' + r.status));
+      }
+      const d = await r.json();
+      state.token = d.token;
+      state.username = d.username;
+      state.userId = d.user_id;
+      localStorage.setItem('tt_token', d.token);
+      $('form-register').classList.add('hidden');
+      $('reg-done').classList.remove('hidden');
+      $('reg-token').textContent = d.token;
+      renderNav();
+    } catch (err) {
+      $('reg-err').textContent = err.message;
+    }
+  });
+
+  $('reg-copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText($('reg-token').textContent);
+      $('reg-copy').textContent = 'copied ✓';
+      setTimeout(() => $('reg-copy').textContent = 'copy token', 1500);
+    } catch { /* ignore */ }
+  });
+
+  $('form-login').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const token = $('login-token').value.trim();
+    $('login-err').textContent = '';
+    if (!token) { $('login-err').textContent = 'token required'; return; }
+    try {
+      const d = await validateToken(token);
+      state.token = token;
+      state.username = d.username;
+      state.userId = d.user_id;
+      localStorage.setItem('tt_token', token);
+      renderNav();
+      location.hash = '#/me';
+    } catch (err) {
+      $('login-err').textContent = err.status === 401 ? 'invalid token' : err.message;
+    }
+  });
+
+  $('me-save-username').addEventListener('click', async () => {
+    const username = $('me-username').value.trim();
+    $('me-username-err').textContent = '';
+    if (!username) { $('me-username-err').textContent = 'username required'; return; }
+    try {
+      const r = await fetch('/me/username', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ username }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.detail || ('http ' + r.status));
+      }
+      const d = await r.json();
+      state.username = d.username;
+      $('me-handle').textContent = d.username;
+      $('me-username').value = '';
+    } catch (err) {
+      $('me-username-err').textContent = err.message;
+    }
+  });
+
+  $('brand').addEventListener('click', () => location.hash = '#/');
+
+  // Router
+  function route() {
+    clearPollers();
+    if (location.hash === '#logout') {
+      logout();
+      location.hash = '#/';
+      return;
+    }
+    const path = location.hash.slice(1) || '/';
+    const view = views[path] || views['/'];
+    view();
+    renderNav();
+  }
+  window.addEventListener('hashchange', route);
+
+  // Boot: validate existing token if present, then route
+  (async () => {
+    if (state.token) {
+      try {
+        const d = await validateToken(state.token);
+        state.username = d.username;
+        state.userId = d.user_id;
+      } catch {
+        logout();
+      }
+    }
+    route();
+  })();
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,11 @@
+.git
+.gitattributes
+.gitignore
+.env
+__pycache__
+*.py[cod]
+.venv
+.ruff_cache
+.pytest_cache
+.mypy_cache
+README.md
