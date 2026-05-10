@@ -278,6 +278,78 @@ def _ingest_bucket(user_id: int) -> str:
     return f"ingest:user:{user_id}"
 
 
+# Per-user aggregate caps. Real heavy Claude Code use is well under these.
+# Two windows so a patient spoofer can't sustain at the hourly ceiling
+# indefinitely. Batches that would push the user over either cap are
+# silently dropped so a spoofer can't binary-search the boundary.
+_USER_HOURLY_COST_CAP = 20.0
+_USER_HOURLY_TOKEN_CAP = 5_000_000
+_USER_DAILY_COST_CAP = 30.0
+_USER_DAILY_TOKEN_CAP = 10_000_000
+
+# Per-IP daily cap (cross-user). Multi-accounting from a single host can't
+# scale past this. Tightens against the "register many accounts and spam
+# each" attack — to exceed this an attacker needs distributed infrastructure.
+_IP_DAILY_COST_CAP = 50.0
+_IP_DAILY_TOKEN_CAP = 20_000_000
+
+
+async def _user_within_caps(
+    pool, user_id: int, new_cost: float, new_tokens: int
+) -> bool:
+    """True if adding (new_cost, new_tokens) stays under both windows."""
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                    COALESCE(sum(cost_usd)      FILTER (WHERE occurred_at > now() - interval '1 hour'),   0)::float  AS hr_cost,
+                    COALESCE(sum(billed_tokens) FILTER (WHERE occurred_at > now() - interval '1 hour'),   0)::bigint AS hr_tokens,
+                    COALESCE(sum(cost_usd)      FILTER (WHERE occurred_at > now() - interval '24 hours'), 0)::float  AS day_cost,
+                    COALESCE(sum(billed_tokens) FILTER (WHERE occurred_at > now() - interval '24 hours'), 0)::bigint AS day_tokens
+                FROM api_requests
+                WHERE user_id = %s
+                  AND occurred_at > now() - interval '24 hours'
+                """,
+                (user_id,),
+            )
+            row = await cur.fetchone()
+    hr_cost, hr_tokens, day_cost, day_tokens = (
+        float(row[0] or 0), int(row[1] or 0), float(row[2] or 0), int(row[3] or 0)
+    )
+    return (
+        hr_cost + new_cost <= _USER_HOURLY_COST_CAP
+        and hr_tokens + new_tokens <= _USER_HOURLY_TOKEN_CAP
+        and day_cost + new_cost <= _USER_DAILY_COST_CAP
+        and day_tokens + new_tokens <= _USER_DAILY_TOKEN_CAP
+    )
+
+
+async def _ip_within_cap(
+    pool, ingest_ip: str, new_cost: float, new_tokens: int
+) -> bool:
+    """True if adding (new_cost, new_tokens) stays under the per-IP daily cap."""
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                    COALESCE(sum(cost_usd), 0)::float    AS cost,
+                    COALESCE(sum(billed_tokens), 0)::bigint AS tokens
+                FROM api_requests
+                WHERE ingest_ip = %s
+                  AND occurred_at > now() - interval '24 hours'
+                """,
+                (ingest_ip,),
+            )
+            row = await cur.fetchone()
+    ip_cost, ip_tokens = float(row[0] or 0), int(row[1] or 0)
+    return (
+        ip_cost + new_cost <= _IP_DAILY_COST_CAP
+        and ip_tokens + new_tokens <= _IP_DAILY_TOKEN_CAP
+    )
+
+
 @router.post("/v1/logs")
 async def ingest_logs(
     request: Request, user: dict = Depends(current_user_ingest)
@@ -305,15 +377,30 @@ async def ingest_logs(
     events = list(parse_api_request_events(raw))
 
     if events:
+        # Aggregate caps. Layered defense:
+        #   - per-user hourly + daily caps the size of any one account
+        #   - per-IP daily caps the size of multi-accounting from one host
+        # If adding this batch would push past any cap, drop the whole batch
+        # silently. A spoofer can't binary-search the boundary because the
+        # response is identical in success and rejection.
+        new_cost = sum((e["cost_usd"] or 0) for e in events)
+        new_tokens = sum(e["billed_tokens"] for e in events)
+        ingest_ip = _client_key(request)
+        if not await _user_within_caps(pool, user["id"], new_cost, new_tokens):
+            events = []
+        elif not await _ip_within_cap(pool, ingest_ip, new_cost, new_tokens):
+            events = []
+
+    if events:
         pool = request.app.state.pool
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.executemany(
                     """
                     INSERT INTO api_requests (
-                        user_id, billed_tokens, cost_usd, request_id, occurred_at
+                        user_id, billed_tokens, cost_usd, request_id, occurred_at, ingest_ip
                     ) VALUES (
-                        %(user_id)s, %(billed_tokens)s, %(cost_usd)s, %(request_id)s, %(occurred_at)s
+                        %(user_id)s, %(billed_tokens)s, %(cost_usd)s, %(request_id)s, %(occurred_at)s, %(ingest_ip)s
                     )
                     ON CONFLICT (user_id, request_id) DO NOTHING
                     """,
@@ -321,6 +408,7 @@ async def ingest_logs(
                         {
                             **e,
                             "user_id": user["id"],
+                            "ingest_ip": ingest_ip,
                             "occurred_at": e["occurred_at"] or datetime.now(timezone.utc),
                         }
                         for e in events

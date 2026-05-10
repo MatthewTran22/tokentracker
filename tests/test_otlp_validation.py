@@ -127,3 +127,45 @@ def test_drops_event_with_wrong_event_name():
     # Defensive: only api_request events are stored. Other claude_code.* events
     # carry prompt/tool content and must never be persisted.
     assert list(parse_api_request_events(_payload(**{"event.name": "tool_result"}))) == []
+
+
+def _payload_n_records(n: int) -> bytes:
+    """Build a payload containing N api_request records, all canonical-shape."""
+    now_ns = time.time_ns()
+    records = []
+    for i in range(n):
+        attrs = [
+            _kv("event.name", "api_request"),
+            _kv("session.id", f"sess-{i}"),
+            _kv("organization.id", "org-test"),
+            _kv("model", "claude-sonnet-4-6"),
+            _kv("request_id", f"req_test_{now_ns}_{i}_xxxxxxxx"),
+            _kv("output_tokens", 100),
+            _kv("cache_creation_tokens", 50),
+            _kv("cost_usd", 0.01),
+        ]
+        records.append(LogRecord(
+            time_unix_nano=now_ns + i,
+            observed_time_unix_nano=now_ns + i,
+            attributes=attrs,
+        ))
+    req = ExportLogsServiceRequest(
+        resource_logs=[ResourceLogs(scope_logs=[ScopeLogs(log_records=records)])]
+    )
+    return req.SerializeToString()
+
+
+def test_batch_under_cap_passes():
+    # 50 records is the cap, ≤ 50 must pass.
+    events = list(parse_api_request_events(_payload_n_records(50)))
+    assert len(events) == 50
+
+
+def test_batch_over_cap_drops_entire_payload():
+    # 51 records → whole payload dropped (not truncated).
+    assert list(parse_api_request_events(_payload_n_records(51))) == []
+
+
+def test_batch_far_over_cap_drops_entire_payload():
+    # The bypass attempt (1500 events in one body) must yield nothing.
+    assert list(parse_api_request_events(_payload_n_records(1500))) == []

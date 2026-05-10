@@ -32,6 +32,12 @@ _MODEL_RE = re.compile(r"^claude-(sonnet|opus|haiku)-\d", re.IGNORECASE)
 _PER_EVENT_TOKEN_CAP = 2_000_000
 _PER_EVENT_COST_CAP = 50.0
 
+# Real Claude Code OTLP exports carry 1-5 log records per HTTP request.
+# A payload with dozens to thousands is a forger packing the body cap.
+# Reject the entire batch (rather than truncating) so a spoofer can't
+# probe to learn the cap.
+_MAX_BATCH_RECORDS = 50
+
 
 def _any_to_python(v: AnyValue) -> Any:
     which = v.WhichOneof("value")
@@ -99,6 +105,17 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
     """
     req = ExportLogsServiceRequest()
     req.ParseFromString(raw)
+
+    # Batch size cap: real Claude Code never sends this many records in one
+    # HTTP request. Drop the whole batch (not just the overflow) so probing
+    # the cap is uninformative.
+    total_records = sum(
+        len(sl.log_records)
+        for rl in req.resource_logs
+        for sl in rl.scope_logs
+    )
+    if total_records > _MAX_BATCH_RECORDS:
+        return
 
     for rl in req.resource_logs:
         resource_attrs = _attrs_to_dict(rl.resource.attributes)

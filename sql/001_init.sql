@@ -25,11 +25,16 @@ CREATE TABLE IF NOT EXISTS api_requests (
     cost_usd      NUMERIC(18, 10),
     request_id    TEXT,
     occurred_at   TIMESTAMPTZ NOT NULL,
+    -- Source IP at ingest time. Powers the cross-user per-IP cap so
+    -- multi-accounting from a single host can't scale leaderboard impact.
+    ingest_ip     TEXT,
     UNIQUE (user_id, request_id)
 );
 
 CREATE INDEX IF NOT EXISTS api_requests_user_occurred_idx
     ON api_requests (user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS api_requests_ingest_ip_occurred_idx
+    ON api_requests (ingest_ip, occurred_at DESC);
 
 CREATE TABLE IF NOT EXISTS rate_limits (
     bucket  TEXT NOT NULL,
