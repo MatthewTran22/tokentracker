@@ -100,14 +100,38 @@ def test_accepts_known_model_families():
 
 
 def test_drops_when_billed_tokens_above_cap():
-    # 1.5M output + 0.6M cache_creation = 2.1M > 2M cap
-    payload = _payload(output_tokens=1_500_000, cache_creation_tokens=600_000)
+    # 1M output + 600K cache_creation = 1.6M > 1.5M cap
+    payload = _payload(output_tokens=1_000_000, cache_creation_tokens=600_000)
     assert list(parse_api_request_events(payload)) == []
 
 
 def test_drops_when_cost_above_cap():
-    # The spoof posted $999_999.99 — should be rejected.
+    # Spoofs claiming hundreds of dollars per event must be rejected;
+    # max real event today is ~$17 (Opus 4.7 1M context + 64K output + 1h cache).
     assert list(parse_api_request_events(_payload(cost_usd=999_999.99))) == []
+    # Even a "balanced" claim above $25 is rejected.
+    payload = _payload(
+        input_tokens=1_000_000, output_tokens=64_000, cache_creation_tokens=1_000_000,
+        model="claude-opus-4-7",
+        cost_usd=30.0,  # > $25 cap
+    )
+    assert list(parse_api_request_events(payload)) == []
+
+
+def test_accepts_realistic_opus_4_7_max():
+    """Real Opus 4.7 with 1M context, 64K output, 1h cache writes ≈ $17.
+    Must pass — this is what a heavy 12-hour-vibe-coder turn looks like."""
+    payload = _payload(
+        input_tokens=1_000_000,         # $5/Mtok = $5.00
+        output_tokens=64_000,           # $25/Mtok = $1.60
+        cache_creation_tokens=1_000_000, # $10/Mtok (1h) = $10.00 actual; $6.25 expected (5m)
+        cache_read_tokens=0,
+        model="claude-opus-4-7",
+        cost_usd=16.60,                 # ratio vs. 5m expected ≈ 1.5x, fits 2x tolerance
+    )
+    events = list(parse_api_request_events(payload))
+    assert len(events) == 1
+    assert events[0]["billed_tokens"] == 1_064_000
 
 
 def test_accepts_realistic_high_value_event():
@@ -159,14 +183,14 @@ def _payload_n_records(n: int) -> bytes:
 
 
 def test_batch_under_cap_passes():
-    # 50 records is the cap, ≤ 50 must pass.
-    events = list(parse_api_request_events(_payload_n_records(50)))
-    assert len(events) == 50
+    # 100 records is the cap, ≤ 100 must pass.
+    events = list(parse_api_request_events(_payload_n_records(100)))
+    assert len(events) == 100
 
 
 def test_batch_over_cap_drops_entire_payload():
-    # 51 records → whole payload dropped (not truncated).
-    assert list(parse_api_request_events(_payload_n_records(51))) == []
+    # 101 records → whole payload dropped (not truncated).
+    assert list(parse_api_request_events(_payload_n_records(101))) == []
 
 
 def test_batch_far_over_cap_drops_entire_payload():
@@ -204,17 +228,30 @@ def test_cost_pumped_with_tiny_tokens_fails():
     assert list(parse_api_request_events(payload)) == []
 
 
-def test_cost_within_5x_tolerance_passes():
-    """Tier discounts and pricing variations: up to 5x slack allowed."""
-    # 100K output × $15/Mtok = $1.50 expected. Claim $7.00 (~4.7x) — passes.
+def test_cost_within_2x_tolerance_passes():
+    """1h cache writes (2x base) push real ratio to ~1.6x — must still pass."""
+    # 100K output × $15/Mtok = $1.50 expected at 5m rate. Claim $2.40 (1.6x) — passes.
     payload = _payload(
         output_tokens=100_000,
         cache_creation_tokens=0,
         input_tokens=0,
         cache_read_tokens=0,
-        cost_usd=7.00,
+        cost_usd=2.40,
     )
     assert len(list(parse_api_request_events(payload))) == 1
+
+
+def test_cost_outside_2x_tolerance_fails():
+    """Above 2x, the spoofer is pumping cost without proportional tokens."""
+    # 100K output × $15/Mtok = $1.50 expected. Claim $5.00 (~3.3x) — drops.
+    payload = _payload(
+        output_tokens=100_000,
+        cache_creation_tokens=0,
+        input_tokens=0,
+        cache_read_tokens=0,
+        cost_usd=5.00,
+    )
+    assert list(parse_api_request_events(payload)) == []
 
 
 def test_consistency_check_skipped_for_unknown_family():

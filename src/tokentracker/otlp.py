@@ -22,21 +22,25 @@ _BILLED_TOKENS_MAX = 2_000_000_000
 #   model          Real models always look like `claude-{family}-<digit>...`.
 #                  Permissive on the version suffix, strict on the family
 #                  + digit so junk like `claude-opus-bezos-edition` fails.
-#   per-event caps Even the largest legitimate single Claude Code turn is
-#                  far below these. ~200K input + ~16K output + ~200K
-#                  cache_creation puts billed_tokens around 220K and
-#                  cost around $8 at API list price. 2M tokens / $50 is
-#                  generous headroom; anything beyond is forged.
+#   per-event caps Anchored to Anthropic's published physical per-request max
+#                  (Opus 4.7, Sonnet 4.6, Haiku 4.5 — checked May 2026):
+#                  - Opus 4.7 with 1M context, 64K output, 1h cache writes:
+#                      1M × $5 (input) + 64K × $25 (output) + 1M × $10 (1h cache)
+#                      = $5.00 + $1.60 + $10.00 ≈ $16.60 max real per request
+#                  - Sonnet 4.6 with same shape: ~$9.96 max
+#                  $25 cap = ~50% margin. 1.5M token cap covers
+#                  1M cache_creation + 64K output with margin. Bump if
+#                  Anthropic ships a model with bigger context or output.
 _REQUEST_ID_RE = re.compile(r"^req_[A-Za-z0-9_\-]{8,}$")
 _MODEL_RE = re.compile(r"^claude-(sonnet|opus|haiku)-\d", re.IGNORECASE)
-_PER_EVENT_TOKEN_CAP = 2_000_000
-_PER_EVENT_COST_CAP = 50.0
+_PER_EVENT_TOKEN_CAP = 1_500_000
+_PER_EVENT_COST_CAP = 25.0
 
-# Real Claude Code OTLP exports carry 1-5 log records per HTTP request.
-# A payload with dozens to thousands is a forger packing the body cap.
-# Reject the entire batch (rather than truncating) so a spoofer can't
-# probe to learn the cap.
-_MAX_BATCH_RECORDS = 50
+# Real Claude Code emits ~1-5 records per 5-second export. Even with a
+# reconnect-after-offline backlog flush, the realistic max is ~30 records
+# per HTTP request. 100 leaves 3x headroom; over that is a spoofer packing
+# the body. Drops the entire batch so probing the boundary is uninformative.
+_MAX_BATCH_RECORDS = 100
 
 # Cost-vs-tokens consistency. Real Claude Code computes cost from token
 # counts at Anthropic's published API rates, so cost is always within a
@@ -48,12 +52,23 @@ _MAX_BATCH_RECORDS = 50
 # These rates are USD per million tokens, conservative on the high side
 # of each token type. Heavy real users pass naturally; spoofers must now
 # inflate tokens proportionally to cost.
+# Anthropic API list rates per million tokens, as of May 2026:
+#   sonnet — Sonnet 4 / 4.5 / 4.6 (all share pricing)
+#   opus   — Opus 4.5 / 4.6 / 4.7 (all share pricing; 3x cheaper than 4.1)
+#   haiku  — Haiku 4.5
+# cache_creation uses the 5-minute write rate (1.25x base). 1-hour cache
+# writes are 2x base, so a real event using 1h cache shows ratio 1.6x —
+# absorbed by the 2x tolerance below.
 _RATES_BY_FAMILY = {
-    "sonnet": {"input": 3.0,  "output": 15.0, "cache_creation": 3.75,  "cache_read": 0.30},
-    "opus":   {"input": 15.0, "output": 75.0, "cache_creation": 18.75, "cache_read": 1.50},
-    "haiku":  {"input": 1.0,  "output": 5.0,  "cache_creation": 1.25,  "cache_read": 0.10},
+    "sonnet": {"input": 3.0, "output": 15.0, "cache_creation": 3.75, "cache_read": 0.30},
+    "opus":   {"input": 5.0, "output": 25.0, "cache_creation": 6.25, "cache_read": 0.50},
+    "haiku":  {"input": 1.0, "output":  5.0, "cache_creation": 1.25, "cache_read": 0.10},
 }
-_COST_TOLERANCE = 5.0          # claimed cost ≤ expected × this
+# Real CC events emit cost = tokens × rate, so actual/expected ratio is ~1.
+# Cache discounts and batch pricing land below 1×, never above. 2× absorbs
+# rate updates (Anthropic shifts list prices a few times a year) and the
+# fact that we approximate per-family rather than per-exact-model.
+_COST_TOLERANCE = 2.0
 _COST_FLOOR = 0.05             # absolute floor so tiny events don't FP
 
 
