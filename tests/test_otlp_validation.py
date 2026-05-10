@@ -32,10 +32,22 @@ def _kv(key, value):
     return KeyValue(key=key, value=av)
 
 
-def _payload(**overrides) -> bytes:
+def _resource(service_name: str | None = "claude-code"):
+    """Build a Resource matching real Claude Code's resource attributes."""
+    from opentelemetry.proto.resource.v1.resource_pb2 import Resource
+    attrs = []
+    if service_name is not None:
+        attrs.append(_kv("service.name", service_name))
+        attrs.append(_kv("service.version", "1.0.0-test"))
+    return Resource(attributes=attrs)
+
+
+def _payload(*, resource_service_name: str | None = "claude-code", **overrides) -> bytes:
     """Build a single-event OTLP payload with canonical real-Claude-Code shape.
 
-    Pass overrides to mutate / drop individual attributes. `None` removes the key.
+    Pass overrides to mutate / drop individual log-record attributes. None removes
+    the key. Pass resource_service_name=None or another string to override the
+    Resource-level service.name attribute (defaults to the real CC value).
     """
     now_ns = time.time_ns()
     base = {
@@ -52,7 +64,10 @@ def _payload(**overrides) -> bytes:
     attrs = [_kv(k, v) for k, v in base.items() if v is not None]
     rec = LogRecord(time_unix_nano=now_ns, observed_time_unix_nano=now_ns, attributes=attrs)
     req = ExportLogsServiceRequest(
-        resource_logs=[ResourceLogs(scope_logs=[ScopeLogs(log_records=[rec])])]
+        resource_logs=[ResourceLogs(
+            resource=_resource(resource_service_name),
+            scope_logs=[ScopeLogs(log_records=[rec])],
+        )]
     )
     return req.SerializeToString()
 
@@ -64,6 +79,18 @@ def test_canonical_event_passes():
     assert e["billed_tokens"] == 567 + 120
     assert e["cost_usd"] == 0.0421
     assert e["request_id"].startswith("req_test_")
+
+
+def test_drops_when_service_name_missing():
+    """Spoof scripts that don't set Resource attributes get rejected wholesale."""
+    assert list(parse_api_request_events(_payload(resource_service_name=None))) == []
+
+
+def test_drops_when_service_name_wrong():
+    """Generic OTLP clients (Datadog Agent, Vector, etc.) advertising a
+    different service.name are not Claude Code and get rejected."""
+    assert list(parse_api_request_events(_payload(resource_service_name="datadog-agent"))) == []
+    assert list(parse_api_request_events(_payload(resource_service_name="my-app"))) == []
 
 
 def test_drops_when_session_id_missing():
@@ -177,7 +204,10 @@ def _payload_n_records(n: int) -> bytes:
             attributes=attrs,
         ))
     req = ExportLogsServiceRequest(
-        resource_logs=[ResourceLogs(scope_logs=[ScopeLogs(log_records=records)])]
+        resource_logs=[ResourceLogs(
+            resource=_resource("claude-code"),
+            scope_logs=[ScopeLogs(log_records=records)],
+        )]
     )
     return req.SerializeToString()
 

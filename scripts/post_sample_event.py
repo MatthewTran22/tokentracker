@@ -15,6 +15,7 @@ from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
 )
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue, KeyValue
 from opentelemetry.proto.logs.v1.logs_pb2 import LogRecord, ResourceLogs, ScopeLogs
+from opentelemetry.proto.resource.v1.resource_pb2 import Resource
 
 
 def _kv(key: str, value) -> KeyValue:
@@ -57,9 +58,16 @@ def build_payload() -> bytes:
             _kv("speed", "normal"),
         ],
     )
+    # The server requires resource.service.name == "claude-code" — the
+    # value real Claude Code's OTLP SDK sets by default.
+    resource = Resource(attributes=[
+        _kv("service.name", "claude-code"),
+        _kv("service.version", "sample-script"),
+    ])
     req = ExportLogsServiceRequest(
         resource_logs=[
             ResourceLogs(
+                resource=resource,
                 scope_logs=[ScopeLogs(log_records=[record])],
             )
         ]

@@ -18,6 +18,11 @@ _BILLED_TOKENS_MAX = 2_000_000_000
 # (the user controls the wire), but together they reject every casual spoof
 # and any "I just inflated the numbers" attempt.
 #
+#   service.name   Claude Code's OTLP SDK always sets this to "claude-code"
+#                  as a resource attribute (per docs.claude.com/en/monitoring).
+#                  This endpoint is Claude-Code-specific by design — we are
+#                  not a generic OTLP collector — so we can refuse anything
+#                  that doesn't identify itself as CC.
 #   request_id     Anthropic's API stamps requests with `req_<base32>`.
 #   model          Real models always look like `claude-{family}-<digit>...`.
 #                  Permissive on the version suffix, strict on the family
@@ -31,6 +36,7 @@ _BILLED_TOKENS_MAX = 2_000_000_000
 #                  $25 cap = ~50% margin. 1.5M token cap covers
 #                  1M cache_creation + 64K output with margin. Bump if
 #                  Anthropic ships a model with bigger context or output.
+_EXPECTED_SERVICE_NAME = "claude-code"
 _REQUEST_ID_RE = re.compile(r"^req_[A-Za-z0-9_\-]{8,}$")
 _MODEL_RE = re.compile(r"^claude-(sonnet|opus|haiku)-\d", re.IGNORECASE)
 _PER_EVENT_TOKEN_CAP = 1_500_000
@@ -131,6 +137,13 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
 
     for rl in req.resource_logs:
         resource_attrs = _attrs_to_dict(rl.resource.attributes)
+        # Hard requirement: this ResourceLogs scope must self-identify as
+        # Claude Code. Generic OTLP clients (Datadog Agent, Vector, custom
+        # scripts) won't set this; spoof scripts that built ResourceLogs
+        # without resource attrs definitely won't.
+        if _as_str(resource_attrs.get("service.name")) != _EXPECTED_SERVICE_NAME:
+            continue
+
         for sl in rl.scope_logs:
             for rec in sl.log_records:
                 attrs = {**resource_attrs, **_attrs_to_dict(rec.attributes)}
