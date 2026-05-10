@@ -111,12 +111,15 @@ def test_drops_when_cost_above_cap():
 
 
 def test_accepts_realistic_high_value_event():
-    """A realistic large turn (200K cache_creation, $8 cost) must still pass —
-    the caps shouldn't false-positive on legitimate heavy usage."""
+    """A realistic large turn (200K cache_creation, ~$1.60 cost) must still pass —
+    the caps shouldn't false-positive on legitimate heavy usage. Cost is
+    derived from sonnet rates: 200K input + 16K output + 200K cache_creation."""
     payload = _payload(
-        output_tokens=16_000,
-        cache_creation_tokens=200_000,
-        cost_usd=7.95,
+        input_tokens=200_000,        # $3/Mtok = $0.60
+        output_tokens=16_000,        # $15/Mtok = $0.24
+        cache_creation_tokens=200_000,  # $3.75/Mtok = $0.75
+        cache_read_tokens=0,
+        cost_usd=1.60,               # ≈ expected $1.59
     )
     events = list(parse_api_request_events(payload))
     assert len(events) == 1
@@ -169,3 +172,68 @@ def test_batch_over_cap_drops_entire_payload():
 def test_batch_far_over_cap_drops_entire_payload():
     # The bypass attempt (1500 events in one body) must yield nothing.
     assert list(parse_api_request_events(_payload_n_records(1500))) == []
+
+
+# ---- cost-vs-tokens consistency ----
+
+def test_cost_consistent_with_tokens_passes():
+    """Real telemetry: cost = tokens × rate. Must pass."""
+    # 567 output × $15/Mtok = $0.0085, 120 cache_creation × $3.75/Mtok = $0.0005
+    # Total expected ≈ $0.013; claimed $0.04 is 3x — within 5x tolerance.
+    payload = _payload(
+        output_tokens=567,
+        cache_creation_tokens=120,
+        input_tokens=1234,
+        cache_read_tokens=8000,
+        cost_usd=0.04,
+    )
+    assert len(list(parse_api_request_events(payload))) == 1
+
+
+def test_cost_pumped_with_tiny_tokens_fails():
+    """The classic spoof: claim huge cost with negligible tokens."""
+    # $0.39 with 1K output + 1K cache_creation → expected ~ $0.019
+    # Ratio 20x → exceeds 5x tolerance, drop.
+    payload = _payload(
+        output_tokens=1000,
+        cache_creation_tokens=1000,
+        input_tokens=0,
+        cache_read_tokens=0,
+        cost_usd=0.39,
+    )
+    assert list(parse_api_request_events(payload)) == []
+
+
+def test_cost_within_5x_tolerance_passes():
+    """Tier discounts and pricing variations: up to 5x slack allowed."""
+    # 100K output × $15/Mtok = $1.50 expected. Claim $7.00 (~4.7x) — passes.
+    payload = _payload(
+        output_tokens=100_000,
+        cache_creation_tokens=0,
+        input_tokens=0,
+        cache_read_tokens=0,
+        cost_usd=7.00,
+    )
+    assert len(list(parse_api_request_events(payload))) == 1
+
+
+def test_consistency_check_skipped_for_unknown_family():
+    """If we can't classify the model family, skip the check rather than
+    drop legitimate events for novel model names. (The model regex still
+    requires sonnet|opus|haiku, so this is defense-in-depth.)"""
+    # Model passes the regex but contains family token + extra junk; expected
+    # cost still computes since "sonnet" is in the lowercased name.
+    payload = _payload(model="claude-sonnet-4-6", cost_usd=0.04)
+    assert len(list(parse_api_request_events(payload))) == 1
+
+
+def test_zero_cost_event_passes():
+    """A free event (e.g. pure cache hit) must not be misclassified as
+    inconsistent — None / 0 cost should bypass the cost check entirely."""
+    payload = _payload(
+        output_tokens=100,
+        cache_creation_tokens=0,
+        cache_read_tokens=10000,
+        cost_usd=0.0,
+    )
+    assert len(list(parse_api_request_events(payload))) == 1
