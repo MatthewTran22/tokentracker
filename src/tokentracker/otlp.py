@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -5,6 +6,11 @@ from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
 )
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue
+
+# api_requests.billed_tokens is a 32-bit INTEGER (max 2_147_483_647). Clamp
+# below that with headroom so a spoofed or buggy value doesn't blow up the
+# whole executemany batch with numeric_value_out_of_range.
+_BILLED_TOKENS_MAX = 2_000_000_000
 
 
 def _any_to_python(v: AnyValue) -> Any:
@@ -33,18 +39,28 @@ def _as_int(x: Any) -> int:
     if x is None:
         return 0
     try:
-        return int(x)
+        n = int(x)
     except (TypeError, ValueError):
         return 0
+    if n < 0:
+        return 0
+    if n > _BILLED_TOKENS_MAX:
+        return _BILLED_TOKENS_MAX
+    return n
 
 
 def _as_float(x: Any) -> float | None:
     if x is None:
         return None
     try:
-        return float(x)
+        f = float(x)
     except (TypeError, ValueError):
         return None
+    # NUMERIC rejects NaN/Infinity; negative cost is nonsense and would just
+    # let a user drag their own leaderboard rank below zero.
+    if not math.isfinite(f) or f < 0:
+        return None
+    return f
 
 
 def _as_str(x: Any) -> str | None:
@@ -71,6 +87,13 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
                 attrs = {**resource_attrs, **_attrs_to_dict(rec.attributes)}
                 if attrs.get("event.name") != "api_request":
                     continue
+                # Postgres treats NULLs as distinct in UNIQUE(user_id, request_id),
+                # so a missing request_id would skip the ON CONFLICT dedupe and
+                # let retries stack up rows. Drop the event instead of inserting
+                # something that can never be deduped.
+                request_id = _as_str(attrs.get("request_id"))
+                if request_id is None:
+                    continue
                 occurred_at = _ns_to_datetime(rec.time_unix_nano) or _ns_to_datetime(
                     rec.observed_time_unix_nano
                 )
@@ -80,6 +103,6 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
                 yield {
                     "billed_tokens": billed_tokens,
                     "cost_usd": _as_float(attrs.get("cost_usd")),
-                    "request_id": _as_str(attrs.get("request_id")),
+                    "request_id": request_id,
                     "occurred_at": occurred_at,
                 }
