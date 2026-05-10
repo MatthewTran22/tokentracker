@@ -30,6 +30,7 @@ services:
     volumes:
       - ./src:/app/src:ro
       - ./scripts:/app/scripts:ro
+      - ./tests:/app/tests:ro
     # Dev-only override of the production CMD: --reload watches the bind-mounted source.
     command: uvicorn tokentracker.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 

@@ -22,6 +22,15 @@ _MAX_BODY_BYTES = 5 * 1024 * 1024
 
 class MaxBodySize(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Reject chunked transfer outright. Without Content-Length the size
+        # cap below cannot be enforced before reading the full body, so an
+        # attacker can pin memory by streaming bytes indefinitely. Honest
+        # OTLP/JSON clients always send Content-Length.
+        if request.headers.get("transfer-encoding"):
+            return JSONResponse(
+                {"detail": "Transfer-Encoding not allowed; send Content-Length"},
+                status_code=411,
+            )
         cl = request.headers.get("content-length")
         if cl is not None:
             try:

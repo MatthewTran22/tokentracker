@@ -126,13 +126,12 @@ async def register(body: RegisterIn, request: Request, response: Response) -> Re
                         "INSERT INTO sessions (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
                         (user_id, session_hash, expires_at),
                     )
-    except pg_errors.UniqueViolation as e:
-        msg = str(e)
-        if "email" in msg:
-            raise HTTPException(status.HTTP_409_CONFLICT, "email already registered")
-        if "username" in msg:
-            raise HTTPException(status.HTTP_409_CONFLICT, "username already taken")
-        raise HTTPException(status.HTTP_409_CONFLICT, "conflict")
+    except pg_errors.UniqueViolation:
+        # Generic message for ALL unique violations — distinguishing
+        # email vs. username collisions lets an attacker enumerate which
+        # emails are registered (an email collision yields a different
+        # response than a fresh email + duplicate username).
+        raise HTTPException(status.HTTP_409_CONFLICT, "registration failed")
 
     set_session_cookie(response, session_token)
     return RegisterOut(user_id=user_id, username=username, ingest_token=ingest_token)
@@ -148,10 +147,18 @@ class LoginIn(BaseModel):
 @router.post("/login")
 async def login(body: LoginIn, request: Request, response: Response) -> dict:
     pool = request.app.state.pool
-    if not await check_rate(pool, f"login:{_client_key(request)}", limit=10, window_seconds=60):
+    email = body.email.strip().lower()
+
+    # Two buckets: the IP bucket caps abuse from a single source; the email
+    # bucket caps how often any one account can be tried, so an attacker
+    # rotating IPs cannot credential-spray a target email.
+    ip_bucket = f"login:ip:{_client_key(request)}"
+    email_bucket = f"login:email:{email}"
+    if not await check_rate(pool, ip_bucket, limit=10, window_seconds=60):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many attempts, try later")
+    if not await check_rate(pool, email_bucket, limit=10, window_seconds=300):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many attempts, try later")
 
-    email = body.email.strip().lower()
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
@@ -277,10 +284,30 @@ async def usage_me(request: Request, user: dict = Depends(current_user_session))
 
 # ---- ingest (Bearer-authed via ingest token) ----
 
+_INGEST_LIMIT = 600       # per user, per window
+_INGEST_WINDOW = 60       # seconds
+
+
+def _ingest_bucket(user_id: int) -> str:
+    return f"ingest:user:{user_id}"
+
+
 @router.post("/v1/logs")
 async def ingest_logs(
     request: Request, user: dict = Depends(current_user_ingest)
 ) -> Response:
+    pool = request.app.state.pool
+
+    # Cap per-user ingest. Without this an authed user (or whoever holds a
+    # leaked token) can pump unbounded rows into api_requests by varying
+    # request_id. 600/min is well above legitimate Claude Code traffic.
+    if not await check_rate(
+        pool, _ingest_bucket(user["id"]), limit=_INGEST_LIMIT, window_seconds=_INGEST_WINDOW
+    ):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "ingest rate limit exceeded"
+        )
+
     ctype = request.headers.get("content-type", "")
     if "protobuf" not in ctype:
         raise HTTPException(
@@ -325,6 +352,14 @@ async def ingest_metrics(
     request: Request, user: dict = Depends(current_user_ingest)
 ) -> Response:
     # v1 stub: accept and discard so clients with OTEL_METRICS_EXPORTER=otlp don't error.
+    # Shared rate-limit bucket with /v1/logs so the per-user cap covers both.
+    pool = request.app.state.pool
+    if not await check_rate(
+        pool, _ingest_bucket(user["id"]), limit=_INGEST_LIMIT, window_seconds=_INGEST_WINDOW
+    ):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "ingest rate limit exceeded"
+        )
     return Response(
         content=ExportMetricsServiceResponse().SerializeToString(),
         media_type="application/x-protobuf",

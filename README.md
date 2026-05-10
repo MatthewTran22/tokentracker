@@ -105,8 +105,9 @@ Supabase works too — swap in its `*-pooler.supabase.com:6543` URL and keep `DB
 - Ingest tokens and session cookies hashed with HMAC-SHA256(pepper, token) — a DB dump alone cannot be used to authenticate without also capturing `AUTH_SECRET`.
 - Session cookies: HttpOnly, SameSite=Strict, 30-day TTL, server-side session rows so logout is a real revocation.
 - Timing: login path always runs Argon2 verify (real or dummy) so a missing user and a wrong password have the same latency.
-- Rate limits: 10/min per IP on `/login`, 3/5min per IP on `/register`.
-- Request-body cap: 5 MB on every route — defuses body-bomb DoS. OTLP batches from Claude Code are orders of magnitude smaller.
+- Rate limits (DB-backed, effective across workers): `/login` 10/min per IP **and** 10/5min per email (defeats credential spraying from rotating IPs); `/register` 3/5min per IP; `/v1/logs` + `/v1/metrics` 600/min per authed user (caps row-spam by a leaked ingest token).
+- Request-body cap: 5 MB on every route via `Content-Length`; chunked `Transfer-Encoding` rejected outright (411) since it bypasses the cap.
+- Registration error responses are uniform across email vs. username collisions to defeat email enumeration.
 - Container: runs as non-root user `app` (UID 1001).
 - Response headers: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, CSP with `default-src 'self'` and `frame-ancestors 'none'`, and HSTS in prod.
 - `/docs`, `/redoc`, `/openapi.json` disabled in prod (gated on `COOKIE_SECURE=1`).
@@ -116,8 +117,17 @@ Supabase works too — swap in its `*-pooler.supabase.com:6543` URL and keep `DB
 
 - No email verification / password reset.
 - No audit log of who changed what.
-- Rate limiter is in-memory and per-process — if you scale to multiple workers, attackers get N × the budget. Move to Postgres or Redis before scaling horizontally.
+- Per-email login bucket can be used to lock a victim out of `/login` for the 5-minute window by spamming their email. Acceptable trade against credential spraying given there's no MFA; revisit if MFA lands.
 - CSP allows `'unsafe-inline'` for scripts and styles since the HTML has inline blocks; migrate to nonced external files for a tighter policy.
+
+## Tests
+
+```bash
+docker compose build app           # one-time; picks up the dev dep group
+docker compose run --rm --no-deps app pytest tests/ -q
+```
+
+Tests stub the DB at the `pool` interface (no Postgres needed) and exercise the security-sensitive routes end-to-end through ASGI.
 
 ## Schema
 
