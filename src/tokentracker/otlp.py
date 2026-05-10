@@ -1,4 +1,5 @@
 import math
+import re
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -11,6 +12,25 @@ from opentelemetry.proto.common.v1.common_pb2 import AnyValue
 # below that with headroom so a spoofed or buggy value doesn't blow up the
 # whole executemany batch with numeric_value_out_of_range.
 _BILLED_TOKENS_MAX = 2_000_000_000
+
+# Anti-spoof checks. Real Claude Code OTLP events come from a narrow shape
+# the server-side telemetry emits. None of these stop a determined forger
+# (the user controls the wire), but together they reject every casual spoof
+# and any "I just inflated the numbers" attempt.
+#
+#   request_id     Anthropic's API stamps requests with `req_<base32>`.
+#   model          Real models always look like `claude-{family}-<digit>...`.
+#                  Permissive on the version suffix, strict on the family
+#                  + digit so junk like `claude-opus-bezos-edition` fails.
+#   per-event caps Even the largest legitimate single Claude Code turn is
+#                  far below these. ~200K input + ~16K output + ~200K
+#                  cache_creation puts billed_tokens around 220K and
+#                  cost around $8 at API list price. 2M tokens / $50 is
+#                  generous headroom; anything beyond is forged.
+_REQUEST_ID_RE = re.compile(r"^req_[A-Za-z0-9_\-]{8,}$")
+_MODEL_RE = re.compile(r"^claude-(sonnet|opus|haiku)-\d", re.IGNORECASE)
+_PER_EVENT_TOKEN_CAP = 2_000_000
+_PER_EVENT_COST_CAP = 50.0
 
 
 def _any_to_python(v: AnyValue) -> Any:
@@ -87,22 +107,37 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
                 attrs = {**resource_attrs, **_attrs_to_dict(rec.attributes)}
                 if attrs.get("event.name") != "api_request":
                     continue
-                # Postgres treats NULLs as distinct in UNIQUE(user_id, request_id),
-                # so a missing request_id would skip the ON CONFLICT dedupe and
-                # let retries stack up rows. Drop the event instead of inserting
-                # something that can never be deduped.
-                request_id = _as_str(attrs.get("request_id"))
-                if request_id is None:
+
+                # ---- shape checks (cheap, catch lazy spoofs) ----
+                # Real events always include these. A spoofer can fill them
+                # in, but most don't bother.
+                if not _as_str(attrs.get("session.id")):
                     continue
-                occurred_at = _ns_to_datetime(rec.time_unix_nano) or _ns_to_datetime(
-                    rec.observed_time_unix_nano
-                )
+                if not _as_str(attrs.get("organization.id")):
+                    continue
+                request_id = _as_str(attrs.get("request_id"))
+                if request_id is None or not _REQUEST_ID_RE.match(request_id):
+                    continue
+                model = _as_str(attrs.get("model"))
+                if model is None or not _MODEL_RE.match(model):
+                    continue
+
+                # ---- value checks (catch "just inflate the numbers") ----
                 billed_tokens = _as_int(attrs.get("output_tokens")) + _as_int(
                     attrs.get("cache_creation_tokens")
                 )
+                cost_usd = _as_float(attrs.get("cost_usd"))
+                if billed_tokens > _PER_EVENT_TOKEN_CAP:
+                    continue
+                if cost_usd is not None and cost_usd > _PER_EVENT_COST_CAP:
+                    continue
+
+                occurred_at = _ns_to_datetime(rec.time_unix_nano) or _ns_to_datetime(
+                    rec.observed_time_unix_nano
+                )
                 yield {
                     "billed_tokens": billed_tokens,
-                    "cost_usd": _as_float(attrs.get("cost_usd")),
+                    "cost_usd": cost_usd,
                     "request_id": request_id,
                     "occurred_at": occurred_at,
                 }
