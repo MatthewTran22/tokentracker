@@ -4,6 +4,8 @@ OTLP ingest server + public dashboard for Claude Code usage data.
 
 ## Auth model
 
+A user is identified by a **username** (2-32 chars, `[A-Za-z0-9_-]`) which doubles as login id and public handle on the leaderboard. No email — there's no verification flow or password reset, so storing one would just be a worse identifier.
+
 Two secrets per user, issued at register time:
 
 | Secret | Where it lives | Used for |
@@ -48,12 +50,12 @@ Restart Claude Code. Events flow within ~5s.
 - `GET /healthz`
 
 **Web session cookie (HttpOnly):**
-- `POST /register` — email + password (+ optional username); sets cookie, returns ingest token
-- `POST /login` — email + password; sets cookie
+- `POST /register` — username + password; sets cookie, returns ingest token
+- `POST /login` — username + password; sets cookie
 - `POST /logout` — clears cookie + deletes the session row
 - `GET /me` — current user
 - `GET /usage/me` — per-user totals
-- `PATCH /me/username` — set / change username
+- `PATCH /me/username` — rename
 - `POST /me/ingest-token/rotate` — invalidates the old ingest token, returns a new one
 
 **Ingest Bearer token (Claude Code only):**
@@ -105,9 +107,9 @@ Supabase works too — swap in its `*-pooler.supabase.com:6543` URL and keep `DB
 - Ingest tokens and session cookies hashed with HMAC-SHA256(pepper, token) — a DB dump alone cannot be used to authenticate without also capturing `AUTH_SECRET`.
 - Session cookies: HttpOnly, SameSite=Strict, 30-day TTL, server-side session rows so logout is a real revocation.
 - Timing: login path always runs Argon2 verify (real or dummy) so a missing user and a wrong password have the same latency.
-- Rate limits (DB-backed, effective across workers): `/login` 10/min per IP **and** 10/5min per email (defeats credential spraying from rotating IPs); `/register` 3/5min per IP; `/v1/logs` + `/v1/metrics` 600/min per authed user (caps row-spam by a leaked ingest token).
+- Rate limits (DB-backed, effective across workers): `/login` 10/min per IP **and** 10/5min per username (defeats credential spraying from rotating IPs); `/register` 3/5min per IP; `/v1/logs` + `/v1/metrics` 600/min per authed user (caps row-spam by a leaked ingest token).
 - Request-body cap: 5 MB on every route via `Content-Length`; chunked `Transfer-Encoding` rejected outright (411) since it bypasses the cap.
-- Registration error responses are uniform across email vs. username collisions to defeat email enumeration.
+- Registration error responses are uniform across any unique-constraint collision (today: username only) so future constraints can't accidentally start leaking.
 - Container: runs as non-root user `app` (UID 1001).
 - Response headers: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, CSP with `default-src 'self'` and `frame-ancestors 'none'`, and HSTS in prod.
 - `/docs`, `/redoc`, `/openapi.json` disabled in prod (gated on `COOKIE_SECURE=1`).
@@ -115,9 +117,9 @@ Supabase works too — swap in its `*-pooler.supabase.com:6543` URL and keep `DB
 
 ## Known limitations (for now)
 
-- No email verification / password reset.
+- No password reset / account recovery (no email on file by design).
 - No audit log of who changed what.
-- Per-email login bucket can be used to lock a victim out of `/login` for the 5-minute window by spamming their email. Acceptable trade against credential spraying given there's no MFA; revisit if MFA lands.
+- Per-username login bucket can be used to lock a victim out of `/login` for the 5-minute window by spamming their username. Acceptable trade against credential spraying given there's no MFA; revisit if MFA lands.
 - CSP allows `'unsafe-inline'` for scripts and styles since the HTML has inline blocks; migrate to nonced external files for a tighter policy.
 
 ## Tests
@@ -132,7 +134,7 @@ Tests stub the DB at the `pool` interface (no Postgres needed) and exercise the 
 ## Schema
 
 ```
-users         id, email UNIQUE, username UNIQUE, password_hash, ingest_token_hash UNIQUE, created_at
+users         id, username UNIQUE, password_hash, ingest_token_hash UNIQUE, created_at
 sessions      id, user_id, token_hash UNIQUE, created_at, last_seen_at, expires_at
 api_requests  id, user_id, billed_tokens (output + cache_creation), cost_usd, request_id, occurred_at, UNIQUE(user_id, request_id)
 ```

@@ -19,7 +19,7 @@ _AUTH_SECRET = os.environ["AUTH_SECRET"].encode("utf-8")
 if len(_AUTH_SECRET) < 32:
     raise RuntimeError("AUTH_SECRET must be at least 32 bytes")
 
-# Precomputed dummy hash used to equalize timing when a login email doesn't exist.
+# Precomputed dummy hash used to equalize timing when a login user doesn't exist.
 _DUMMY_HASH = _ph.hash("timing_equalization_dummy_password_never_valid")
 
 
@@ -109,11 +109,11 @@ async def current_user_session(
             if row is None:
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "session expired")
             await cur.execute(
-                "SELECT id, username, email FROM users WHERE id = %s",
+                "SELECT id, username FROM users WHERE id = %s",
                 (row[0],),
             )
             urow = await cur.fetchone()
-    return {"id": urow[0], "username": urow[1], "email": urow[2]}
+    return {"id": urow[0], "username": urow[1]}
 
 
 async def current_user_ingest(

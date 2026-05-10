@@ -10,7 +10,7 @@ from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
     ExportMetricsServiceResponse,
 )
 from psycopg import errors as pg_errors
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from .otlp import parse_api_request_events
 from .ratelimit import check_rate
@@ -29,7 +29,6 @@ from .security import (
 router = APIRouter()
 
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_\-]{2,32}$")
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _validate_username(u: str) -> str:
@@ -40,13 +39,6 @@ def _validate_username(u: str) -> str:
             "username must be 2-32 chars: letters, digits, underscore, hyphen",
         )
     return u
-
-
-def _validate_email(email: str) -> str:
-    email = email.strip().lower()
-    if len(email) > 254 or not _EMAIL_RE.fullmatch(email):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid email")
-    return email
 
 
 def _validate_password(pw: str) -> None:
@@ -83,14 +75,13 @@ def _client_key(request: Request) -> str:
 # ---- auth: register ----
 
 class RegisterIn(BaseModel):
-    email: str
+    username: str
     password: str
-    username: str | None = Field(default=None)
 
 
 class RegisterOut(BaseModel):
     user_id: int
-    username: str | None
+    username: str
     ingest_token: str
 
 
@@ -100,9 +91,8 @@ async def register(body: RegisterIn, request: Request, response: Response) -> Re
     if not await check_rate(pool, f"register:{_client_key(request)}", limit=3, window_seconds=300):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many registrations, try later")
 
-    email = _validate_email(body.email)
+    username = _validate_username(body.username)
     _validate_password(body.password)
-    username = _validate_username(body.username) if body.username else None
 
     password_hash = hash_password(body.password)
     ingest_token = generate_token()
@@ -115,11 +105,11 @@ async def register(body: RegisterIn, request: Request, response: Response) -> Re
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """
-                        INSERT INTO users (email, username, password_hash, ingest_token_hash)
-                        VALUES (%s, %s, %s, %s)
+                        INSERT INTO users (username, password_hash, ingest_token_hash)
+                        VALUES (%s, %s, %s)
                         RETURNING id
                         """,
-                        (email, username, password_hash, ingest_token_hash),
+                        (username, password_hash, ingest_token_hash),
                     )
                     user_id = (await cur.fetchone())[0]
                     await cur.execute(
@@ -127,11 +117,7 @@ async def register(body: RegisterIn, request: Request, response: Response) -> Re
                         (user_id, session_hash, expires_at),
                     )
     except pg_errors.UniqueViolation:
-        # Generic message for ALL unique violations — distinguishing
-        # email vs. username collisions lets an attacker enumerate which
-        # emails are registered (an email collision yields a different
-        # response than a fresh email + duplicate username).
-        raise HTTPException(status.HTTP_409_CONFLICT, "registration failed")
+        raise HTTPException(status.HTTP_409_CONFLICT, "username already taken")
 
     set_session_cookie(response, session_token)
     return RegisterOut(user_id=user_id, username=username, ingest_token=ingest_token)
@@ -140,30 +126,30 @@ async def register(body: RegisterIn, request: Request, response: Response) -> Re
 # ---- auth: login ----
 
 class LoginIn(BaseModel):
-    email: str
+    username: str
     password: str
 
 
 @router.post("/login")
 async def login(body: LoginIn, request: Request, response: Response) -> dict:
     pool = request.app.state.pool
-    email = body.email.strip().lower()
+    username = body.username.strip()
 
-    # Two buckets: the IP bucket caps abuse from a single source; the email
-    # bucket caps how often any one account can be tried, so an attacker
-    # rotating IPs cannot credential-spray a target email.
+    # Two buckets: the IP bucket caps abuse from a single source; the
+    # username bucket caps how often any one account can be tried, so an
+    # attacker rotating IPs cannot credential-spray a target user.
     ip_bucket = f"login:ip:{_client_key(request)}"
-    email_bucket = f"login:email:{email}"
+    username_bucket = f"login:username:{username}"
     if not await check_rate(pool, ip_bucket, limit=10, window_seconds=60):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many attempts, try later")
-    if not await check_rate(pool, email_bucket, limit=10, window_seconds=300):
+    if not await check_rate(pool, username_bucket, limit=10, window_seconds=300):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many attempts, try later")
 
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT id, password_hash, username FROM users WHERE email = %s",
-                (email,),
+                "SELECT id, password_hash, username FROM users WHERE username = %s",
+                (username,),
             )
             row = await cur.fetchone()
 

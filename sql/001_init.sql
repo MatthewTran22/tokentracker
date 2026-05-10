@@ -1,7 +1,6 @@
 CREATE TABLE IF NOT EXISTS users (
     id                  BIGSERIAL PRIMARY KEY,
-    email               TEXT NOT NULL UNIQUE,
-    username            TEXT UNIQUE,
+    username            TEXT NOT NULL UNIQUE,
     password_hash       TEXT NOT NULL,
     ingest_token_hash   TEXT NOT NULL UNIQUE,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()

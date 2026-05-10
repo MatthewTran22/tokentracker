@@ -437,6 +437,11 @@ h1.hero-title {
   gap: 1rem;
 }
 .card.wide { max-width: 720px; }
+/* Grid items default to min-width: auto (= their min-content size). A long
+   unbroken line in a child <pre> would otherwise force the card past its
+   max-width. min-width: 0 lets the child overflow (with its own scroll)
+   instead of stretching the grid track. */
+.card > * { min-width: 0; }
 .card h2 { margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; }
 .card .sub {
   margin: -0.5rem 0 0.5rem;
@@ -483,6 +488,10 @@ h1.hero-title {
   user-select: all;
   color: var(--ink);
   line-height: 1.6;
+  /* Snippet variants use white-space: pre and contain a long Authorization
+     bearer line; let the box scroll horizontally rather than push the card. */
+  overflow-x: auto;
+  max-width: 100%;
 }
 .warn-banner {
   border: 1px solid rgba(243, 200, 124, 0.4);
@@ -711,18 +720,14 @@ h1.hero-title {
     <section id="view-register" class="page hidden">
       <form class="card" id="form-register" autocomplete="on">
         <h2>create an account</h2>
-        <p class="sub">email and password sign you into the dashboard. you'll also get a separate ingest token for Claude Code.</p>
+        <p class="sub">your username is your login and your public handle on the leaderboard. you'll also get a separate ingest token for Claude Code.</p>
         <div class="row">
-          <label for="reg-email">email</label>
-          <input id="reg-email" type="email" required autocomplete="email" maxlength="254">
+          <label for="reg-username">username (2-32 chars: letters, digits, _ -)</label>
+          <input id="reg-username" type="text" required autocomplete="username" minlength="2" maxlength="32" pattern="[A-Za-z0-9_\-]{2,32}" placeholder="shown on the leaderboard">
         </div>
         <div class="row">
           <label for="reg-password">password (8+ characters)</label>
           <input id="reg-password" type="password" required autocomplete="new-password" minlength="8" maxlength="128">
-        </div>
-        <div class="row">
-          <label for="reg-username">username (optional, public)</label>
-          <input id="reg-username" type="text" maxlength="32" placeholder="shown on the leaderboard">
         </div>
         <div id="reg-err" class="err"></div>
         <button class="btn btn-primary" type="submit" style="justify-content: center;">register</button>
@@ -750,8 +755,8 @@ h1.hero-title {
         <h2>log in</h2>
         <p class="sub">to your GTT dashboard.</p>
         <div class="row">
-          <label for="login-email">email</label>
-          <input id="login-email" type="email" required autocomplete="email">
+          <label for="login-username">username</label>
+          <input id="login-username" type="text" required autocomplete="username" maxlength="32">
         </div>
         <div class="row">
           <label for="login-password">password</label>
@@ -980,7 +985,7 @@ h1.hero-title {
     showOnly('view-login');
     $('login-err').textContent = '';
     $('form-login').reset();
-    setTimeout(() => $('login-email').focus(), 0);
+    setTimeout(() => $('login-username').focus(), 0);
   }
 
   function renderMe() {
@@ -1047,14 +1052,13 @@ h1.hero-title {
   $('form-register').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('reg-err').textContent = '';
-    const email = $('reg-email').value.trim();
+    const username = $('reg-username').value.trim();
     const password = $('reg-password').value;
-    const username = $('reg-username').value.trim() || null;
     try {
       const d = await fetchJson('/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, username }),
+        body: JSON.stringify({ username, password }),
       });
       state.loggedIn = true;
       state.userId = d.user_id;
@@ -1076,13 +1080,13 @@ h1.hero-title {
   $('form-login').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('login-err').textContent = '';
-    const email = $('login-email').value.trim();
+    const username = $('login-username').value.trim();
     const password = $('login-password').value;
     try {
       const d = await fetchJson('/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username, password }),
       });
       state.loggedIn = true;
       state.userId = d.user_id;
@@ -1090,7 +1094,7 @@ h1.hero-title {
       renderNav();
       location.hash = '#/me';
     } catch (err) {
-      $('login-err').textContent = err.status === 401 ? 'invalid email or password' : (err.message || 'login failed');
+      $('login-err').textContent = err.status === 401 ? 'invalid username or password' : (err.message || 'login failed');
     }
   });
 
