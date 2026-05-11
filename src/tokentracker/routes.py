@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
@@ -12,6 +12,7 @@ from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
 from psycopg import errors as pg_errors
 from pydantic import BaseModel
 
+from .mailer import send_reset_email
 from .otlp import parse_api_request_events
 from .ratelimit import check_rate
 from .security import (
@@ -29,6 +30,10 @@ from .security import (
 router = APIRouter()
 
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_\-]{2,32}$")
+# Permissive on purpose: real validation is "an SMTP server accepts it",
+# which we can only learn by trying to send. This catches obvious typos
+# without rejecting legitimate-but-exotic addresses (plus-tags, subdomains).
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _validate_username(u: str) -> str:
@@ -48,6 +53,13 @@ def _validate_password(pw: str) -> None:
         )
     if len(pw) > 128:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "password too long (max 128)")
+
+
+def _validate_email(e: str) -> str:
+    e = (e or "").strip().lower()
+    if len(e) > 254 or not _EMAIL_RE.fullmatch(e):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid email address")
+    return e
 
 
 _TRUST_PROXY = os.environ.get("TRUST_PROXY") == "1"
@@ -77,6 +89,7 @@ def _client_key(request: Request) -> str:
 class RegisterIn(BaseModel):
     username: str
     password: str
+    email: str
 
 
 class RegisterOut(BaseModel):
@@ -93,6 +106,7 @@ async def register(body: RegisterIn, request: Request, response: Response) -> Re
 
     username = _validate_username(body.username)
     _validate_password(body.password)
+    email = _validate_email(body.email)
 
     password_hash = hash_password(body.password)
     ingest_token = generate_token()
@@ -105,11 +119,11 @@ async def register(body: RegisterIn, request: Request, response: Response) -> Re
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """
-                        INSERT INTO users (username, password_hash, ingest_token_hash)
-                        VALUES (%s, %s, %s)
+                        INSERT INTO users (username, password_hash, ingest_token_hash, email)
+                        VALUES (%s, %s, %s, %s)
                         RETURNING id
                         """,
-                        (username, password_hash, ingest_token_hash),
+                        (username, password_hash, ingest_token_hash, email),
                     )
                     user_id = (await cur.fetchone())[0]
                     await cur.execute(
@@ -117,7 +131,13 @@ async def register(body: RegisterIn, request: Request, response: Response) -> Re
                         (user_id, session_hash, expires_at),
                     )
     except pg_errors.UniqueViolation:
-        raise HTTPException(status.HTTP_409_CONFLICT, "username already taken")
+        # Both username and lower(email) have UNIQUE constraints. We
+        # deliberately do NOT say which one collided — distinguishing them
+        # would turn /register into an enumeration oracle for either field.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "that username or email is already in use",
+        )
 
     set_session_cookie(response, session_token)
     return RegisterOut(user_id=user_id, username=username, ingest_token=ingest_token)
@@ -219,6 +239,240 @@ async def set_username(
     except pg_errors.UniqueViolation:
         raise HTTPException(status.HTTP_409_CONFLICT, "username already taken")
     return {"user_id": user["id"], "username": row[0]}
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.patch("/me/password")
+async def change_password(
+    body: ChangePasswordIn,
+    request: Request,
+    response: Response,
+    user: dict = Depends(current_user_session),
+) -> dict:
+    pool = request.app.state.pool
+
+    # Same per-user rate as login so an unattended logged-in session can't be
+    # used to brute the original password (e.g. before locking the device).
+    if not await check_rate(
+        pool, f"pwchange:user:{user['id']}", limit=10, window_seconds=300
+    ):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many attempts, try later")
+
+    _validate_password(body.new_password)
+    if body.new_password == body.current_password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "new password must differ from the current one")
+
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT password_hash FROM users WHERE id = %s", (user["id"],)
+            )
+            row = await cur.fetchone()
+
+    if row is None or not verify_password_safe(body.current_password, row[0]):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "current password is incorrect")
+
+    new_hash = hash_password(body.new_password)
+    # Revoke every other session on this account; keep the current one so the
+    # user isn't logged out of the tab they're already in.
+    current_cookie = request.cookies.get("tt_session")
+    keep_hash = hmac_hash(current_cookie) if current_cookie else None
+
+    async with pool.connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE users SET password_hash = %s WHERE id = %s",
+                    (new_hash, user["id"]),
+                )
+                if keep_hash is not None:
+                    await cur.execute(
+                        "DELETE FROM sessions WHERE user_id = %s AND token_hash != %s",
+                        (user["id"], keep_hash),
+                    )
+                else:
+                    await cur.execute(
+                        "DELETE FROM sessions WHERE user_id = %s", (user["id"],)
+                    )
+
+    return {"ok": True}
+
+
+class EmailIn(BaseModel):
+    email: str
+
+
+@router.patch("/me/email")
+async def set_email(
+    body: EmailIn, request: Request, user: dict = Depends(current_user_session)
+) -> dict:
+    email = _validate_email(body.email)
+    pool = request.app.state.pool
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE users SET email = %s WHERE id = %s RETURNING email",
+                    (email, user["id"]),
+                )
+                row = await cur.fetchone()
+    except pg_errors.UniqueViolation:
+        raise HTTPException(status.HTTP_409_CONFLICT, "email already registered")
+    return {"user_id": user["id"], "email": row[0]}
+
+
+@router.get("/me/full")
+async def me_full(request: Request, user: dict = Depends(current_user_session)) -> dict:
+    """Like /me, but also returns the email so the dashboard can show/edit it."""
+    pool = request.app.state.pool
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT email FROM users WHERE id = %s", (user["id"],)
+            )
+            row = await cur.fetchone()
+    return {"user_id": user["id"], "username": user["username"], "email": row[0]}
+
+
+# ---- password reset ----
+
+_RESET_TOKEN_TTL = timedelta(hours=1)
+
+
+class PasswordResetRequestIn(BaseModel):
+    email: str
+
+
+@router.post("/password-reset/request")
+async def password_reset_request(
+    body: PasswordResetRequestIn, request: Request
+) -> dict:
+    pool = request.app.state.pool
+
+    # Rate-limit by IP and by email so neither axis can be used to enumerate
+    # or to spam mailboxes. We always return the same generic success below,
+    # regardless of whether the email matches a user.
+    ip_bucket = f"pwreset:ip:{_client_key(request)}"
+    if not await check_rate(pool, ip_bucket, limit=5, window_seconds=600):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many requests, try later")
+
+    # Validate but don't error on invalid email — return the generic message
+    # so an attacker can't tell "no such address" from "address not registered".
+    try:
+        email = _validate_email(body.email)
+    except HTTPException:
+        return {"ok": True}
+
+    email_bucket = f"pwreset:email:{email}"
+    if not await check_rate(pool, email_bucket, limit=5, window_seconds=600):
+        # Same generic response — don't surface the rate-limit to the attacker.
+        return {"ok": True}
+
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT id FROM users WHERE lower(email) = %s", (email,)
+            )
+            row = await cur.fetchone()
+
+    if row is not None:
+        user_id = row[0]
+        token = generate_token()
+        token_hash = hmac_hash(token)
+        expires_at = datetime.now(timezone.utc) + _RESET_TOKEN_TTL
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO password_resets (user_id, token_hash, expires_at)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (user_id, token_hash, expires_at),
+                )
+        send_reset_email(email, token)
+
+    return {"ok": True}
+
+
+@router.get("/password-reset/validate")
+async def password_reset_validate(request: Request, token: str) -> dict:
+    """Cheap check used by the /reset page to decide whether to show the form."""
+    pool = request.app.state.pool
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT 1 FROM password_resets
+                 WHERE token_hash = %s
+                   AND used_at IS NULL
+                   AND expires_at > now()
+                """,
+                (hmac_hash(token),),
+            )
+            ok = await cur.fetchone() is not None
+    if not ok:
+        raise HTTPException(status.HTTP_410_GONE, "reset link is invalid or expired")
+    return {"ok": True}
+
+
+class PasswordResetConfirmIn(BaseModel):
+    token: str
+    password: str
+
+
+@router.post("/password-reset/confirm")
+async def password_reset_confirm(
+    body: PasswordResetConfirmIn, request: Request, response: Response
+) -> dict:
+    _validate_password(body.password)
+    pool = request.app.state.pool
+
+    # Rate-limit confirm attempts by IP so a leaked token isn't trivially
+    # brute-forced against the password validator. (The token itself is
+    # 256 bits of entropy so this is mostly defense in depth.)
+    if not await check_rate(
+        pool, f"pwreset:confirm:{_client_key(request)}", limit=10, window_seconds=300
+    ):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many attempts, try later")
+
+    token_hash = hmac_hash(body.token)
+    new_hash = hash_password(body.password)
+
+    async with pool.connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                # Atomically claim the token: mark used + read user_id. If
+                # another request used it first, this returns no rows.
+                await cur.execute(
+                    """
+                    UPDATE password_resets
+                       SET used_at = now()
+                     WHERE token_hash = %s
+                       AND used_at IS NULL
+                       AND expires_at > now()
+                 RETURNING user_id
+                    """,
+                    (token_hash,),
+                )
+                row = await cur.fetchone()
+                if row is None:
+                    raise HTTPException(status.HTTP_410_GONE, "reset link is invalid or expired")
+                user_id = row[0]
+                await cur.execute(
+                    "UPDATE users SET password_hash = %s WHERE id = %s",
+                    (new_hash, user_id),
+                )
+                # Revoke all existing sessions so old cookies stop working.
+                await cur.execute(
+                    "DELETE FROM sessions WHERE user_id = %s", (user_id,)
+                )
+
+    clear_session_cookie(response)
+    return {"ok": True}
 
 
 @router.post("/me/ingest-token/rotate")

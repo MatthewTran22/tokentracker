@@ -726,6 +726,10 @@ h1.hero-title {
           <input id="reg-username" type="text" required autocomplete="username" minlength="2" maxlength="32" pattern="[A-Za-z0-9_\-]{2,32}" placeholder="shown on the leaderboard">
         </div>
         <div class="row">
+          <label for="reg-email">email (used only for password resets)</label>
+          <input id="reg-email" type="email" required autocomplete="email" maxlength="254">
+        </div>
+        <div class="row">
           <label for="reg-password">password (8+ characters)</label>
           <input id="reg-password" type="password" required autocomplete="new-password" minlength="8" maxlength="128">
         </div>
@@ -764,8 +768,60 @@ h1.hero-title {
         </div>
         <div id="login-err" class="err"></div>
         <button class="btn btn-primary" type="submit" style="justify-content: center;">log in</button>
-        <div class="foot">no account? <a href="#/register">register</a></div>
+        <div class="foot">no account? <a href="#/register">register</a> · <a href="#/forgot">forgot password?</a></div>
       </form>
+    </section>
+
+    <!-- Forgot password -->
+    <section id="view-forgot" class="page hidden">
+      <form class="card" id="form-forgot" autocomplete="on">
+        <h2>forgot your password?</h2>
+        <p class="sub">enter the email tied to your account. if it matches, we'll send a reset link that's good for 1 hour.</p>
+        <div class="row">
+          <label for="forgot-email">email</label>
+          <input id="forgot-email" type="email" required autocomplete="email" maxlength="254">
+        </div>
+        <div id="forgot-err" class="err"></div>
+        <button class="btn btn-primary" type="submit" style="justify-content: center;">send reset link</button>
+        <div class="foot"><a href="#/login">back to log in</a></div>
+      </form>
+
+      <div id="forgot-done" class="card hidden">
+        <h2>check your inbox</h2>
+        <p class="sub">if that email is registered, a reset link is on its way. it expires in 1 hour. if you don't see it in a few minutes, check spam.</p>
+        <p class="sub" style="margin-top: 0.75rem;">no email on file (or forgot which one)? message the admin to run <code>scripts/reset_password.py</code> for you.</p>
+        <div class="foot" style="margin-top: 1rem;"><a href="#/login">back to log in</a></div>
+      </div>
+    </section>
+
+    <!-- Reset password (landing from emailed link) -->
+    <section id="view-reset" class="page hidden">
+      <form class="card hidden" id="form-reset" autocomplete="on">
+        <h2>set a new password</h2>
+        <p class="sub">pick something at least 8 characters. all your existing sessions will be signed out.</p>
+        <div class="row">
+          <label for="reset-password">new password (8+ characters)</label>
+          <input id="reset-password" type="password" required autocomplete="new-password" minlength="8" maxlength="128">
+        </div>
+        <div class="row">
+          <label for="reset-password2">confirm</label>
+          <input id="reset-password2" type="password" required autocomplete="new-password" minlength="8" maxlength="128">
+        </div>
+        <div id="reset-err" class="err"></div>
+        <button class="btn btn-primary" type="submit" style="justify-content: center;">save new password</button>
+      </form>
+
+      <div id="reset-invalid" class="card hidden">
+        <h2>this link is invalid or expired</h2>
+        <p class="sub">reset links are good for 1 hour and only work once. request a fresh one and try again.</p>
+        <div class="foot" style="margin-top: 1rem;"><a href="#/forgot">request a new link</a></div>
+      </div>
+
+      <div id="reset-done" class="card hidden">
+        <h2>password updated</h2>
+        <p class="sub">you've been signed out of all sessions. log in with your new password.</p>
+        <div class="foot" style="margin-top: 1rem;"><a href="#/login">log in</a></div>
+      </div>
     </section>
 
     <!-- Dashboard (authed) -->
@@ -778,6 +834,27 @@ h1.hero-title {
         </div>
       </div>
       <div id="me-username-err" class="err" style="text-align: right; max-width: 900px; margin: 0.25rem auto 0; padding: 0 16px; font-family: var(--mono); font-size: 12px; color: var(--danger); min-height: 1.2em;"></div>
+
+      <div class="me-hdr" style="margin-top: 0.25rem;">
+        <div class="who">email <span class="h" id="me-email-display" style="font-weight: 500;">…</span></div>
+        <div class="inline-form">
+          <input id="me-email" type="email" maxlength="254" placeholder="set / change email">
+          <button class="btn btn-ghost sm" id="me-save-email" type="button">save</button>
+        </div>
+      </div>
+      <div id="me-email-err" class="err" style="text-align: right; max-width: 900px; margin: 0.25rem auto 0; padding: 0 16px; font-family: var(--mono); font-size: 12px; color: var(--danger); min-height: 1.2em;"></div>
+
+      <div class="me-hdr" style="margin-top: 0.25rem;">
+        <form id="form-change-pw" class="inline-form" autocomplete="on" style="margin-left: auto;">
+          <input id="cp-current" type="password" placeholder="current password" autocomplete="current-password" class="hidden" required style="width: 150px;">
+          <input id="cp-new" type="password" placeholder="new password (8+)" autocomplete="new-password" minlength="8" maxlength="128" class="hidden" required style="width: 150px;">
+          <input id="cp-new2" type="password" placeholder="confirm" autocomplete="new-password" minlength="8" maxlength="128" class="hidden" required style="width: 110px;">
+          <button class="btn btn-ghost sm hidden" id="cp-save" type="submit">save</button>
+          <button class="btn btn-ghost sm" id="me-toggle-pw" type="button" aria-expanded="false">change password</button>
+        </form>
+      </div>
+      <div id="cp-err" class="err" style="text-align: right; max-width: 900px; margin: 0.25rem auto 0; padding: 0 16px; font-family: var(--mono); font-size: 12px; color: var(--danger); min-height: 1.2em;"></div>
+      <div id="cp-ok" class="hidden" style="text-align: right; max-width: 900px; margin: 0.25rem auto 0; padding: 0 16px; font-family: var(--mono); font-size: 12px; color: var(--green);">password updated · other sessions signed out</div>
 
       <div class="hero" style="margin-top: 1.5rem;">
         <div class="combined-label">your equivalent api spend</div>
@@ -988,10 +1065,60 @@ h1.hero-title {
     setTimeout(() => $('login-username').focus(), 0);
   }
 
+  function renderForgot() {
+    if (state.loggedIn) { location.hash = '#/me'; return; }
+    showOnly('view-forgot');
+    $('form-forgot').classList.remove('hidden');
+    $('forgot-done').classList.add('hidden');
+    $('forgot-err').textContent = '';
+    $('form-forgot').reset();
+    setTimeout(() => $('forgot-email').focus(), 0);
+  }
+
+  function _resetTokenFromHash() {
+    // Hash router: location.hash looks like "#/reset?token=xxx".
+    const h = location.hash.slice(1);
+    const q = h.indexOf('?');
+    if (q < 0) return '';
+    return new URLSearchParams(h.slice(q + 1)).get('token') || '';
+  }
+
+  async function renderReset() {
+    showOnly('view-reset');
+    $('form-reset').classList.add('hidden');
+    $('reset-invalid').classList.add('hidden');
+    $('reset-done').classList.add('hidden');
+    $('reset-err').textContent = '';
+    $('form-reset').reset();
+
+    const token = _resetTokenFromHash();
+    if (!token) {
+      $('reset-invalid').classList.remove('hidden');
+      return;
+    }
+    try {
+      await fetchJson('/password-reset/validate?token=' + encodeURIComponent(token));
+      $('form-reset').classList.remove('hidden');
+      setTimeout(() => $('reset-password').focus(), 0);
+    } catch {
+      $('reset-invalid').classList.remove('hidden');
+    }
+  }
+
   function renderMe() {
     if (!state.loggedIn) { location.hash = '#/login'; return; }
     showOnly('view-me');
     $('me-new-token-wrap').classList.add('hidden');
+    $('me-email-err').textContent = '';
+    $('me-username-err').textContent = '';
+    // Fetch the email once; usage stats poll separately below.
+    fetchJson('/me/full').then(d => {
+      $('me-email-display').textContent = d.email
+        ? d.email
+        : '— (set one so you can reset your password)';
+      $('me-email').value = '';
+      $('me-email').placeholder = d.email ? 'change email' : 'set email';
+    }).catch(() => {});
     const tickCost = usdTicker($('me-cost'));
     const tickTokens = intTicker($('me-tokens'));
     const tickRequests = intTicker($('me-requests'));
@@ -1018,6 +1145,8 @@ h1.hero-title {
     '/setup':      renderSetup,
     '/register':   renderRegister,
     '/login':      renderLogin,
+    '/forgot':     renderForgot,
+    '/reset':      renderReset,
     '/me':         renderMe,
   };
 
@@ -1038,7 +1167,7 @@ h1.hero-title {
           { href: '#/login',       label: 'log in' },
           { href: '#/register',    label: 'register', cta: true },
         ];
-    const path = location.hash.slice(1) || '/';
+    const path = (location.hash.slice(1).split('?')[0]) || '/';
     nav.innerHTML = links.map(l => {
       const active = l.href === '#' + path;
       const cls = ['nav-link'];
@@ -1054,11 +1183,12 @@ h1.hero-title {
     $('reg-err').textContent = '';
     const username = $('reg-username').value.trim();
     const password = $('reg-password').value;
+    const email = $('reg-email').value.trim();
     try {
       const d = await fetchJson('/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, email }),
       });
       state.loggedIn = true;
       state.userId = d.user_id;
@@ -1098,6 +1228,55 @@ h1.hero-title {
     }
   });
 
+  $('form-forgot').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('forgot-err').textContent = '';
+    const email = $('forgot-email').value.trim();
+    try {
+      // Server always returns ok:true (no enumeration), so we always show
+      // the same "check your inbox" card — the user can't tell from the UI
+      // whether the email was registered.
+      await fetchJson('/password-reset/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      $('form-forgot').classList.add('hidden');
+      $('forgot-done').classList.remove('hidden');
+    } catch (err) {
+      $('forgot-err').textContent = err.status === 429
+        ? 'too many requests — try again in a few minutes'
+        : (err.message || 'request failed');
+    }
+  });
+
+  $('form-reset').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('reset-err').textContent = '';
+    const pw = $('reset-password').value;
+    const pw2 = $('reset-password2').value;
+    if (pw !== pw2) { $('reset-err').textContent = 'passwords do not match'; return; }
+    const token = _resetTokenFromHash();
+    try {
+      await fetchJson('/password-reset/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password: pw }),
+      });
+      state.loggedIn = false;
+      $('form-reset').classList.add('hidden');
+      $('reset-done').classList.remove('hidden');
+      renderNav();
+    } catch (err) {
+      if (err.status === 410) {
+        $('form-reset').classList.add('hidden');
+        $('reset-invalid').classList.remove('hidden');
+      } else {
+        $('reset-err').textContent = err.message || 'reset failed';
+      }
+    }
+  });
+
   $('me-save-username').addEventListener('click', async () => {
     const username = $('me-username').value.trim();
     $('me-username-err').textContent = '';
@@ -1113,6 +1292,68 @@ h1.hero-title {
       $('me-username').value = '';
     } catch (err) {
       $('me-username-err').textContent = err.message || 'failed';
+    }
+  });
+
+  $('me-save-email').addEventListener('click', async () => {
+    const email = $('me-email').value.trim();
+    $('me-email-err').textContent = '';
+    if (!email) { $('me-email-err').textContent = 'email required'; return; }
+    try {
+      const d = await fetchJson('/me/email', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      $('me-email-display').textContent = d.email;
+      $('me-email').value = '';
+      $('me-email').placeholder = 'change email';
+    } catch (err) {
+      $('me-email-err').textContent = err.message || 'failed';
+    }
+  });
+
+  function setChangePwOpen(open) {
+    for (const id of ['cp-current', 'cp-new', 'cp-new2', 'cp-save']) {
+      $(id).classList.toggle('hidden', !open);
+    }
+    $('me-toggle-pw').setAttribute('aria-expanded', open ? 'true' : 'false');
+    $('me-toggle-pw').textContent = open ? 'cancel' : 'change password';
+    $('cp-err').textContent = '';
+    $('cp-ok').classList.add('hidden');
+  }
+
+  $('me-toggle-pw').addEventListener('click', () => {
+    const opening = $('cp-current').classList.contains('hidden');
+    setChangePwOpen(opening);
+    if (opening) setTimeout(() => $('cp-current').focus(), 0);
+    else $('form-change-pw').reset();
+  });
+
+  $('form-change-pw').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('cp-err').textContent = '';
+    $('cp-ok').classList.add('hidden');
+    const current_password = $('cp-current').value;
+    const new_password = $('cp-new').value;
+    const confirm_new = $('cp-new2').value;
+    if (new_password !== confirm_new) {
+      $('cp-err').textContent = 'new passwords do not match';
+      return;
+    }
+    try {
+      await fetchJson('/me/password', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_password, new_password }),
+      });
+      $('form-change-pw').reset();
+      setChangePwOpen(false);
+      $('cp-ok').classList.remove('hidden');
+    } catch (err) {
+      $('cp-err').textContent = err.status === 401
+        ? 'current password is incorrect'
+        : (err.message || 'failed');
     }
   });
 
@@ -1147,7 +1388,9 @@ h1.hero-title {
       location.hash = '#/';
       return;
     }
-    const path = location.hash.slice(1) || '/';
+    const raw = location.hash.slice(1) || '/';
+    // Strip query string so e.g. /reset?token=xxx still maps to /reset.
+    const path = raw.split('?')[0] || '/';
     (views[path] || views['/'])();
     renderNav();
   }
