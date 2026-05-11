@@ -24,9 +24,11 @@ docker compose up -d
 open http://localhost:8000/
 ```
 
-Register in the UI → copy the ingest token → paste it into `~/.claude/settings.json`:
+Register in the UI → copy the **prompt** shown after registration → paste it into a Claude Code session. Claude Code will add the config to your user-level `settings.json` (the global per-machine one at `~/.claude/settings.json`, not a project-level `.claude/settings.json` inside a repo). The prompt looks like this:
 
-```json
+```
+Please add this config to my user-level Claude Code settings.json in my home .claude folder (~/.claude/settings.json on macOS/Linux, %USERPROFILE%\.claude\settings.json on Windows). If an "env" block already exists, merge these keys into it instead of overwriting. After saving, let me know so I can restart Claude Code (env vars are read at startup).
+
 {
   "env": {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
@@ -39,7 +41,7 @@ Register in the UI → copy the ingest token → paste it into `~/.claude/settin
 }
 ```
 
-Restart Claude Code. Events flow within ~5s.
+Restart Claude Code. Events flow within ~5s. (Prefer to edit by hand? Paste just the JSON block into `~/.claude/settings.json` yourself.)
 
 ## Endpoints
 

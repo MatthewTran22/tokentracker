@@ -694,20 +694,21 @@ h1.hero-title {
     <section id="view-setup" class="page hidden">
       <div class="hero" style="margin-bottom: 1rem;">
         <h1 class="hero-title" style="font-size: clamp(1.5rem, 4vw, 2.3rem);">wire up Claude Code</h1>
-        <p class="hero-sub">paste this into your Claude Code settings file and restart Claude Code. telemetry starts flowing within ~5 seconds.</p>
+        <p class="hero-sub">copy the prompt below, paste it into a Claude Code session, and Claude will add the config to your user-level <code>settings.json</code> for you. then restart Claude Code — telemetry starts flowing within ~5 seconds.</p>
       </div>
       <div class="card wide">
         <div class="row">
-          <div class="label">settings.json</div>
+          <div class="label">prompt for Claude Code</div>
           <pre id="setup-snippet" class="token-display" style="margin: 0; white-space: pre;"></pre>
         </div>
         <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0;">
-          <button class="btn btn-primary" id="setup-copy" type="button">copy snippet</button>
+          <button class="btn btn-primary" id="setup-copy" type="button">copy prompt</button>
           <a class="btn btn-ghost" href="#/register">get a token</a>
         </div>
         <div class="row" style="margin-top: 0.5rem;">
-          <div class="label">where to put it</div>
-          <ul style="margin: 0; padding-left: 1.25rem; color: var(--ink-dim); font-family: var(--mono); font-size: 12px; line-height: 1.8;">
+          <div class="label">prefer to edit by hand?</div>
+          <p style="margin: 0; color: var(--ink-dim); font-size: 12px;">paste just the JSON portion into your user-level settings file (the global per-machine one, not a project-level <code>.claude/settings.json</code> inside a repo):</p>
+          <ul style="margin: 0.25rem 0 0; padding-left: 1.25rem; color: var(--ink-dim); font-family: var(--mono); font-size: 12px; line-height: 1.8;">
             <li>macOS / Linux: <code>~/.claude/settings.json</code></li>
             <li>Windows: <code>%USERPROFILE%\.claude\settings.json</code></li>
           </ul>
@@ -740,14 +741,15 @@ h1.hero-title {
 
       <div id="reg-done" class="card wide hidden">
         <h2>saved — copy your ingest token</h2>
-        <p class="sub">this token goes into Claude Code's <code>settings.json</code> so telemetry reaches this account. it's shown once.</p>
+        <p class="sub">this token goes into your user-level Claude Code <code>settings.json</code> so telemetry reaches this account. it's shown once.</p>
         <div id="reg-token" class="token-display"></div>
         <div class="warn-banner">you can't retrieve this token later. save it now, or rotate a new one from the dashboard.</div>
-        <div class="label" style="margin-top: 0.5rem;">full settings.json snippet (token already inserted)</div>
+        <div class="label" style="margin-top: 0.5rem;">prompt for Claude Code (token already inserted)</div>
         <pre id="reg-snippet" class="token-display" style="margin: 0; white-space: pre; font-size: 11px;"></pre>
-        <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0;">
+        <p style="margin: 0.5rem 0 0; color: var(--ink-dim); font-size: 12px;">paste this into a Claude Code session — Claude will add the config to your user-level settings.json for you. then restart Claude Code.</p>
+        <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0; margin-top: 0.75rem;">
           <button class="btn btn-ghost" id="reg-copy" type="button">copy token</button>
-          <button class="btn btn-primary" id="reg-copy-snippet" type="button">copy full snippet</button>
+          <button class="btn btn-primary" id="reg-copy-snippet" type="button">copy prompt</button>
           <a class="btn btn-ghost" href="#/me">continue to dashboard</a>
         </div>
       </div>
@@ -867,7 +869,7 @@ h1.hero-title {
 
       <div class="tokens-section">
         <h3>ingest token</h3>
-        <p>rotate if leaked. the old token stops working immediately; you'll need to update Claude Code's <code>settings.json</code> with the new one and restart.</p>
+        <p>rotate if leaked. the old token stops working immediately; you'll need to update your user-level Claude Code <code>settings.json</code> with the new one and restart.</p>
         <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0;">
           <button class="btn btn-danger" id="me-rotate" type="button">rotate ingest token</button>
         </div>
@@ -875,11 +877,12 @@ h1.hero-title {
           <div class="label" style="margin-bottom: 0.5rem;">new ingest token — save it now</div>
           <div id="me-new-token" class="token-display"></div>
           <div class="warn-banner" style="margin-top: 0.75rem;">shown once. copy before navigating away.</div>
-          <div class="label" style="margin-top: 1rem; margin-bottom: 0.5rem;">settings.json snippet (new token inserted)</div>
+          <div class="label" style="margin-top: 1rem; margin-bottom: 0.5rem;">prompt for Claude Code (new token inserted)</div>
           <pre id="me-new-snippet" class="token-display" style="margin: 0; white-space: pre; font-size: 11px;"></pre>
+          <p style="margin: 0.5rem 0 0; color: var(--ink-dim); font-size: 12px;">paste this into a Claude Code session — Claude will update your user-level settings.json for you. then restart Claude Code.</p>
           <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0; margin-top: 0.75rem;">
             <button class="btn btn-ghost" id="me-copy-new" type="button">copy token</button>
-            <button class="btn btn-primary" id="me-copy-new-snippet" type="button">copy full snippet</button>
+            <button class="btn btn-primary" id="me-copy-new-snippet" type="button">copy prompt</button>
           </div>
         </div>
       </div>
@@ -980,6 +983,8 @@ h1.hero-title {
 
   function buildSettingsSnippet(token) {
     return [
+      'Please add this config to my user-level Claude Code settings.json in my home .claude folder (~/.claude/settings.json on macOS/Linux, %USERPROFILE%\\.claude\\settings.json on Windows). If an "env" block already exists, merge these keys into it instead of overwriting. After saving, let me know so I can restart Claude Code (env vars are read at startup).',
+      '',
       '{',
       '  "env": {',
       '    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",',
