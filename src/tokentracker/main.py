@@ -96,9 +96,14 @@ async def favicon_ico() -> FileResponse:
     return FileResponse(_STATIC / "favicon.ico", media_type="image/x-icon")
 
 
-@app.get("/favicon-32.png", include_in_schema=False)
-async def favicon_png() -> FileResponse:
-    return FileResponse(_STATIC / "favicon-32.png", media_type="image/png")
+@app.get("/favicon-192.png", include_in_schema=False)
+async def favicon_192() -> FileResponse:
+    return FileResponse(_STATIC / "favicon-192.png", media_type="image/png")
+
+
+@app.get("/favicon-512.png", include_in_schema=False)
+async def favicon_512() -> FileResponse:
+    return FileResponse(_STATIC / "favicon-512.png", media_type="image/png")
 
 
 @app.get("/apple-touch-icon.png", include_in_schema=False)
