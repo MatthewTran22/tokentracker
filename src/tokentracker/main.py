@@ -8,7 +8,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .db import lifespan
 from .routes import router
 
-_INDEX = Path(__file__).parent / "static" / "index.html"
+_STATIC = Path(__file__).parent / "static"
+_INDEX = _STATIC / "index.html"
 
 # "Production-ish" indicator: true whenever we expect to be behind TLS.
 # Gates HSTS emission and disables FastAPI's auto-generated docs pages.
@@ -88,3 +89,18 @@ app.include_router(router)
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(_INDEX, media_type="text/html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_ico() -> FileResponse:
+    return FileResponse(_STATIC / "favicon.ico", media_type="image/x-icon")
+
+
+@app.get("/favicon-32.png", include_in_schema=False)
+async def favicon_png() -> FileResponse:
+    return FileResponse(_STATIC / "favicon-32.png", media_type="image/png")
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+async def apple_touch_icon() -> FileResponse:
+    return FileResponse(_STATIC / "apple-touch-icon.png", media_type="image/png")
