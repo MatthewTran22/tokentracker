@@ -1,3 +1,4 @@
+import logging
 import math
 import re
 from datetime import datetime, timezone
@@ -7,6 +8,8 @@ from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
 )
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue
+
+logger = logging.getLogger("tokentracker.otlp")
 
 # api_requests.billed_tokens is a 32-bit INTEGER (max 2_147_483_647). Clamp
 # below that with headroom so a spoofed or buggy value doesn't blow up the
@@ -118,33 +121,58 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
     req = ExportLogsServiceRequest()
     req.ParseFromString(raw)
 
+    drops = {
+        "service_name": 0,
+        "event_name": 0,
+        "session_id": 0,
+        "organization_id": 0,
+        "request_id": 0,
+        "model": 0,
+        "token_cap": 0,
+        "cost_cap": 0,
+    }
+    sample_model = None
+    kept = 0
+    total = 0
+
     for rl in req.resource_logs:
         resource_attrs = _attrs_to_dict(rl.resource.attributes)
+        rl_record_count = sum(len(sl.log_records) for sl in rl.scope_logs)
         # Hard requirement: this ResourceLogs scope must self-identify as
         # Claude Code. Generic OTLP clients (Datadog Agent, Vector, custom
         # scripts) won't set this; spoof scripts that built ResourceLogs
         # without resource attrs definitely won't.
         if _as_str(resource_attrs.get("service.name")) != _EXPECTED_SERVICE_NAME:
+            drops["service_name"] += rl_record_count
+            total += rl_record_count
             continue
 
         for sl in rl.scope_logs:
             for rec in sl.log_records:
+                total += 1
                 attrs = {**resource_attrs, **_attrs_to_dict(rec.attributes)}
                 if attrs.get("event.name") != "api_request":
+                    drops["event_name"] += 1
                     continue
 
                 # ---- shape checks (cheap, catch lazy spoofs) ----
                 # Real events always include these. A spoofer can fill them
                 # in, but most don't bother.
                 if not _as_str(attrs.get("session.id")):
+                    drops["session_id"] += 1
                     continue
                 if not _as_str(attrs.get("organization.id")):
+                    drops["organization_id"] += 1
                     continue
                 request_id = _as_str(attrs.get("request_id"))
                 if request_id is None or not _REQUEST_ID_RE.match(request_id):
+                    drops["request_id"] += 1
                     continue
                 model = _as_str(attrs.get("model"))
                 if model is None or not _MODEL_RE.match(model):
+                    drops["model"] += 1
+                    if sample_model is None:
+                        sample_model = model
                     continue
 
                 # ---- value checks (catch "just inflate the numbers") ----
@@ -153,16 +181,26 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
                 )
                 cost_usd = _as_float(attrs.get("cost_usd"))
                 if billed_tokens > _PER_EVENT_TOKEN_CAP:
+                    drops["token_cap"] += 1
                     continue
                 if cost_usd is not None and cost_usd > _PER_EVENT_COST_CAP:
+                    drops["cost_cap"] += 1
                     continue
 
                 occurred_at = _ns_to_datetime(rec.time_unix_nano) or _ns_to_datetime(
                     rec.observed_time_unix_nano
                 )
+                kept += 1
                 yield {
                     "billed_tokens": billed_tokens,
                     "cost_usd": cost_usd,
                     "request_id": request_id,
                     "occurred_at": occurred_at,
                 }
+
+    if total:
+        nonzero = {k: v for k, v in drops.items() if v}
+        logger.info(
+            "otlp_parse total=%d kept=%d drops=%s sample_dropped_model=%r",
+            total, kept, nonzero or "{}", sample_model,
+        )
