@@ -212,22 +212,13 @@ def _payload_n_records(n: int) -> bytes:
     return req.SerializeToString()
 
 
-def test_batch_under_cap_passes():
-    # 100 records is the cap, ≤ 100 must pass.
-    events = list(parse_api_request_events(_payload_n_records(100)))
-    assert len(events) == 100
-
-
-def test_batch_over_cap_drops_entire_payload():
-    # 101 records → whole payload dropped (not truncated).
-    assert list(parse_api_request_events(_payload_n_records(101))) == []
-
-
-def test_batch_far_over_cap_drops_entire_payload():
-    # The bypass attempt (1500 events in one body) must yield nothing.
-    assert list(parse_api_request_events(_payload_n_records(1500))) == []
+def test_large_batch_passes():
+    # No batch cap — OTLP BatchLogProcessor can flush up to its max_export_batch_size
+    # (512 by default) in one POST, and a reconnect-after-offline flush goes higher.
+    events = list(parse_api_request_events(_payload_n_records(1500)))
+    assert len(events) == 1500
 
 
 # Cost-vs-tokens consistency check was removed — see otlp.py for rationale.
-# Per-event caps + batch cap + shape checks are pricing-agnostic and don't
-# need to track Anthropic's rate sheet.
+# Per-event caps + shape checks are pricing-agnostic and don't need to track
+# Anthropic's rate sheet.

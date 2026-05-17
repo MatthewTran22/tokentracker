@@ -42,19 +42,13 @@ _MODEL_RE = re.compile(r"^claude-(sonnet|opus|haiku)-\d", re.IGNORECASE)
 _PER_EVENT_TOKEN_CAP = 1_500_000
 _PER_EVENT_COST_CAP = 25.0
 
-# Real Claude Code emits ~1-5 records per 5-second export. Even with a
-# reconnect-after-offline backlog flush, the realistic max is ~30 records
-# per HTTP request. 100 leaves 3x headroom; over that is a spoofer packing
-# the body. Drops the entire batch so probing the boundary is uninformative.
-_MAX_BATCH_RECORDS = 100
-
 # NOTE: a cost-vs-tokens consistency check used to live here. Removed
 # because (1) Claude Code already computes cost_usd from tokens × its own
 # rate table, so any check we did would just re-verify Claude Code's math
 # against ours; (2) hardcoding Anthropic's rates is a maintenance debt
 # that drifts a few times a year; (3) a balanced spoofer pumps both
 # tokens and cost together, defeating the check anyway. The per-event
-# caps + batch cap + shape checks are pricing-agnostic and do the work.
+# caps + shape checks are pricing-agnostic and do the work.
 
 
 def _any_to_python(v: AnyValue) -> Any:
@@ -123,17 +117,6 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
     """
     req = ExportLogsServiceRequest()
     req.ParseFromString(raw)
-
-    # Batch size cap: real Claude Code never sends this many records in one
-    # HTTP request. Drop the whole batch (not just the overflow) so probing
-    # the cap is uninformative.
-    total_records = sum(
-        len(sl.log_records)
-        for rl in req.resource_logs
-        for sl in rl.scope_logs
-    )
-    if total_records > _MAX_BATCH_RECORDS:
-        return
 
     for rl in req.resource_logs:
         resource_attrs = _attrs_to_dict(rl.resource.attributes)
