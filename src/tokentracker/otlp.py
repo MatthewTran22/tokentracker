@@ -134,6 +134,7 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
     sample_model = None
     kept = 0
     total = 0
+    seen_request_ids: dict[str, int] = {}
 
     for rl in req.resource_logs:
         resource_attrs = _attrs_to_dict(rl.resource.attributes)
@@ -191,6 +192,9 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
                     rec.observed_time_unix_nano
                 )
                 kept += 1
+                seen_request_ids[request_id] = (
+                    seen_request_ids.get(request_id, 0) + 1
+                )
                 yield {
                     "billed_tokens": billed_tokens,
                     "cost_usd": cost_usd,
@@ -200,7 +204,14 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
 
     if total:
         nonzero = {k: v for k, v in drops.items() if v}
+        # Show up to 3 (request_id, occurrences_in_batch) pairs so we can see
+        # whether the same request_id is being yielded multiple times per batch.
+        sample_ids = [
+            (rid[:16], n) for rid, n in list(seen_request_ids.items())[:3]
+        ]
         logger.info(
-            "otlp_parse total=%d kept=%d drops=%s sample_dropped_model=%r",
-            total, kept, nonzero or "{}", sample_model,
+            "otlp_parse total=%d kept=%d kept_unique=%d drops=%s "
+            "sample_dropped_model=%r sample_request_ids=%s",
+            total, kept, len(seen_request_ids), nonzero or "{}",
+            sample_model, sample_ids,
         )
