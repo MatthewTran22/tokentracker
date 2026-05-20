@@ -532,14 +532,6 @@ def _ingest_bucket(user_id: int) -> str:
     return f"ingest:user:{user_id}"
 
 
-# NOTE: previously had per-user hourly/daily and per-IP daily aggregate caps
-# here. Removed: founders + founding engineers vibe-coding 12hr/day are
-# legitimately heavy users, and aggregate caps can't distinguish them from
-# spoofers without false-positiving the very people we're building this for.
-# Anti-spoof now relies on per-event sanity (caps + cost-vs-tokens
-# consistency in otlp.py) which catches absurd values regardless of volume.
-
-
 @router.post("/v1/logs")
 async def ingest_logs(
     request: Request, user: dict = Depends(current_user_ingest)
