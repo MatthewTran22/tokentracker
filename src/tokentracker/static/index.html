@@ -354,6 +354,59 @@ h1.hero-title {
   margin-top: 24px;
 }
 
+/* Per-model breakdown under the home hero number */
+.model-breakdown {
+  display: flex;
+  justify-content: center;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+  margin: -8px auto 32px;
+}
+.model-stat { text-align: center; }
+.model-stat .m-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-dimmer);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.model-stat .m-cost {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Leaderboard model-family filter tabs */
+.model-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 1.25rem auto 0;
+  padding: 0 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.model-tab {
+  color: var(--ink-dim);
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: inherit;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+.model-tab:hover { color: var(--ink); }
+.model-tab.active {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
 /* CTAs */
 .cta-row {
   display: flex;
@@ -659,6 +712,11 @@ h1.hero-title {
       <div class="hero">
         <div class="combined-label">combined spend across everyone tracked</div>
         <div id="totals-cost" class="hero-number">$0.00</div>
+        <div class="model-breakdown">
+          <div class="model-stat"><div class="m-label">opus</div><div id="totals-opus" class="m-cost">$0.00</div></div>
+          <div class="model-stat"><div class="m-label">sonnet</div><div id="totals-sonnet" class="m-cost">$0.00</div></div>
+          <div class="model-stat"><div class="m-label">haiku</div><div id="totals-haiku" class="m-cost">$0.00</div></div>
+        </div>
         <div class="stat-row">
           <div class="stat"><div id="totals-tokens" class="n">0</div><div class="l">billed tokens</div></div>
           <div class="stat"><div id="totals-requests" class="n">0</div><div class="l">requests</div></div>
@@ -674,6 +732,12 @@ h1.hero-title {
       <div class="hero" style="margin-bottom: 1rem;">
         <div class="combined-label">ranked by equivalent api spend</div>
         <div class="disclaimer" style="margin-top: 8px;">self-reported. anyone with an ingest token can send whatever numbers they want — this is the honor system. vibes over truth.</div>
+      </div>
+      <div class="model-tabs" id="board-tabs" role="tablist" aria-label="filter leaderboard by model family">
+        <button class="model-tab active" type="button" role="tab" data-model="">all</button>
+        <button class="model-tab" type="button" role="tab" data-model="opus">opus</button>
+        <button class="model-tab" type="button" role="tab" data-model="sonnet">sonnet</button>
+        <button class="model-tab" type="button" role="tab" data-model="haiku">haiku</button>
       </div>
       <div class="board-wrap">
         <table class="board">
@@ -1015,6 +1079,9 @@ h1.hero-title {
     const tickTokens = intTicker($('totals-tokens'));
     const tickRequests = intTicker($('totals-requests'));
     const tickUsers = intTicker($('totals-users'));
+    const tickOpus = usdTicker($('totals-opus'));
+    const tickSonnet = usdTicker($('totals-sonnet'));
+    const tickHaiku = usdTicker($('totals-haiku'));
     poll(async () => {
       try {
         const d = await fetchJson('/stats/claude/totals');
@@ -1022,6 +1089,10 @@ h1.hero-title {
         tickTokens(d.billed_tokens || 0);
         tickRequests(d.total_requests || 0);
         tickUsers(d.total_users || 0);
+        const bm = d.by_model || {};
+        tickOpus(Number((bm.opus && bm.opus.cost_usd) || 0));
+        tickSonnet(Number((bm.sonnet && bm.sonnet.cost_usd) || 0));
+        tickHaiku(Number((bm.haiku && bm.haiku.cost_usd) || 0));
       } catch { /* ignore transient errors */ }
     }, POLL_MS);
   }
@@ -1029,11 +1100,20 @@ h1.hero-title {
   function renderLeaderboard() {
     showOnly('view-leaderboard');
     const body = $('board-body');
-    poll(async () => {
+    const tabs = document.querySelectorAll('#board-tabs .model-tab');
+    // Filter is route-local state — re-entering the view resets to "all".
+    let currentModel = '';
+    for (const t of tabs) t.classList.toggle('active', t.dataset.model === '');
+
+    const fetchAndRender = async () => {
       try {
-        const d = await fetchJson('/stats/claude/leaderboard?limit=100');
+        const url = '/stats/claude/leaderboard?limit=100'
+          + (currentModel ? '&model=' + encodeURIComponent(currentModel) : '');
+        const d = await fetchJson(url);
         if (!d.rows || d.rows.length === 0) {
-          body.innerHTML = '<tr><td colspan="5" class="empty">no users yet</td></tr>';
+          body.innerHTML = currentModel
+            ? `<tr><td colspan="5" class="empty">no ${escapeHtml(currentModel)} spend yet</td></tr>`
+            : '<tr><td colspan="5" class="empty">no users yet</td></tr>';
           return;
         }
         body.innerHTML = d.rows.map(r => `
@@ -1048,7 +1128,19 @@ h1.hero-title {
       } catch (e) {
         body.innerHTML = `<tr><td colspan="5" class="empty">error: ${escapeHtml(e.message)}</td></tr>`;
       }
-    }, POLL_MS);
+    };
+
+    for (const tab of tabs) {
+      tab.onclick = () => {
+        if (tab.dataset.model === currentModel) return;
+        currentModel = tab.dataset.model;
+        for (const t of tabs) t.classList.toggle('active', t === tab);
+        body.innerHTML = '<tr><td colspan="5" class="empty">loading…</td></tr>';
+        fetchAndRender();
+      };
+    }
+
+    poll(fetchAndRender, POLL_MS);
   }
 
   function renderSetup() {

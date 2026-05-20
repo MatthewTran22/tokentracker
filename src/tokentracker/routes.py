@@ -566,9 +566,9 @@ async def ingest_logs(
                 await cur.executemany(
                     """
                     INSERT INTO api_requests (
-                        user_id, billed_tokens, cost_usd, request_id, occurred_at
+                        user_id, billed_tokens, cost_usd, request_id, model, occurred_at
                     ) VALUES (
-                        %(user_id)s, %(billed_tokens)s, %(cost_usd)s, %(request_id)s, %(occurred_at)s
+                        %(user_id)s, %(billed_tokens)s, %(cost_usd)s, %(request_id)s, %(model)s, %(occurred_at)s
                     )
                     ON CONFLICT (user_id, request_id) DO NOTHING
                     """,
@@ -610,6 +610,14 @@ async def ingest_metrics(
 
 # ---- public stats ----
 
+# Model name → family bucket. Substring match is intentional: real model
+# strings look like "claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5",
+# and we want new minor versions to slot in without code changes. Anything
+# that matches none falls into "other" and isn't surfaced in the UI.
+_MODEL_FAMILIES = ("opus", "sonnet", "haiku")
+_MODEL_FAMILY_PATTERNS = {f: f"%{f}%" for f in _MODEL_FAMILIES}
+
+
 @router.get("/stats/claude/totals")
 async def stats_totals(request: Request) -> dict:
     pool = request.app.state.pool
@@ -626,41 +634,108 @@ async def stats_totals(request: Request) -> dict:
                 FROM api_requests
                 """
             )
-            row = await cur.fetchone()
+            totals = await cur.fetchone()
+
+            await cur.execute(
+                """
+                SELECT
+                    CASE
+                        WHEN model ILIKE %s THEN 'opus'
+                        WHEN model ILIKE %s THEN 'sonnet'
+                        WHEN model ILIKE %s THEN 'haiku'
+                        ELSE 'other'
+                    END                                     AS family,
+                    COALESCE(sum(cost_usd), 0)::float       AS cost_usd,
+                    COALESCE(sum(billed_tokens), 0)         AS billed_tokens,
+                    count(*)::bigint                        AS requests
+                FROM api_requests
+                WHERE model IS NOT NULL
+                GROUP BY family
+                """,
+                (
+                    _MODEL_FAMILY_PATTERNS["opus"],
+                    _MODEL_FAMILY_PATTERNS["sonnet"],
+                    _MODEL_FAMILY_PATTERNS["haiku"],
+                ),
+            )
+            model_rows = await cur.fetchall()
+
+    by_model: dict[str, dict] = {
+        f: {"cost_usd": 0.0, "billed_tokens": 0, "requests": 0}
+        for f in _MODEL_FAMILIES
+    }
+    for family, cost_usd, billed_tokens, requests in model_rows:
+        if family in by_model:
+            by_model[family] = {
+                "cost_usd": cost_usd,
+                "billed_tokens": billed_tokens,
+                "requests": requests,
+            }
+
     return {
-        "total_users": row[0],
-        "total_requests": row[1],
-        "billed_tokens": row[2],
-        "total_cost_usd": row[3],
-        "last_activity_at": row[4].isoformat() if row[4] else None,
+        "total_users": totals[0],
+        "total_requests": totals[1],
+        "billed_tokens": totals[2],
+        "total_cost_usd": totals[3],
+        "last_activity_at": totals[4].isoformat() if totals[4] else None,
+        "by_model": by_model,
     }
 
 
 @router.get("/stats/claude/leaderboard")
-async def stats_leaderboard(request: Request, limit: int = 100) -> dict:
+async def stats_leaderboard(
+    request: Request, limit: int = 100, model: str | None = None
+) -> dict:
     limit = max(1, min(limit, 500))
+    # Silently ignore unknown families so callers (and direct API users) get
+    # the unfiltered board instead of an error — same forgiving behavior as
+    # the original endpoint.
+    pattern = _MODEL_FAMILY_PATTERNS.get(model) if model else None
     pool = request.app.state.pool
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                SELECT
-                    u.id,
-                    COALESCE(u.username, 'user ' || u.id::text) AS handle,
-                    COALESCE(sum(r.cost_usd), 0)::float         AS total_cost_usd,
-                    COALESCE(sum(r.billed_tokens), 0)           AS billed_tokens,
-                    count(r.id)::bigint                         AS requests,
-                    max(r.occurred_at)                          AS last_activity_at
-                FROM users u
-                LEFT JOIN api_requests r ON r.user_id = u.id
-                GROUP BY u.id, u.username
-                ORDER BY total_cost_usd DESC, u.id ASC
-                LIMIT %s
-                """,
-                (limit,),
-            )
+            if pattern is None:
+                await cur.execute(
+                    """
+                    SELECT
+                        u.id,
+                        COALESCE(u.username, 'user ' || u.id::text) AS handle,
+                        COALESCE(sum(r.cost_usd), 0)::float         AS total_cost_usd,
+                        COALESCE(sum(r.billed_tokens), 0)           AS billed_tokens,
+                        count(r.id)::bigint                         AS requests,
+                        max(r.occurred_at)                          AS last_activity_at
+                    FROM users u
+                    LEFT JOIN api_requests r ON r.user_id = u.id
+                    GROUP BY u.id, u.username
+                    ORDER BY total_cost_usd DESC, u.id ASC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+            else:
+                # INNER JOIN so users with no activity in this family fall off
+                # entirely — the filtered board shouldn't list them at $0.
+                await cur.execute(
+                    """
+                    SELECT
+                        u.id,
+                        COALESCE(u.username, 'user ' || u.id::text) AS handle,
+                        COALESCE(sum(r.cost_usd), 0)::float         AS total_cost_usd,
+                        COALESCE(sum(r.billed_tokens), 0)           AS billed_tokens,
+                        count(r.id)::bigint                         AS requests,
+                        max(r.occurred_at)                          AS last_activity_at
+                    FROM users u
+                    JOIN api_requests r
+                      ON r.user_id = u.id AND r.model ILIKE %s
+                    GROUP BY u.id, u.username
+                    ORDER BY total_cost_usd DESC, u.id ASC
+                    LIMIT %s
+                    """,
+                    (pattern, limit),
+                )
             rows = await cur.fetchall()
     return {
+        "model": model if pattern else None,
         "rows": [
             {
                 "rank": i + 1,
