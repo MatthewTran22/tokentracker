@@ -532,6 +532,7 @@ def _ingest_bucket(user_id: int) -> str:
     return f"ingest:user:{user_id}"
 
 
+@router.post("/claude/v1/logs")
 @router.post("/v1/logs")
 async def ingest_logs(
     request: Request, user: dict = Depends(current_user_ingest)
@@ -587,6 +588,7 @@ async def ingest_logs(
     )
 
 
+@router.post("/claude/v1/metrics")
 @router.post("/v1/metrics")
 async def ingest_metrics(
     request: Request, user: dict = Depends(current_user_ingest)
