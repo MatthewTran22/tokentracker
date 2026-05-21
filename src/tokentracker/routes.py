@@ -475,7 +475,7 @@ async def password_reset_confirm(
     return {"ok": True}
 
 
-@router.post("/me/ingest-token/rotate")
+@router.post("/me/claude-ingest-token/rotate")
 async def rotate_ingest_token(
     request: Request, user: dict = Depends(current_user_session)
 ) -> dict:
@@ -491,7 +491,7 @@ async def rotate_ingest_token(
     return {"ingest_token": new_token}
 
 
-@router.get("/usage/me")
+@router.get("/usage/me/claude")
 async def usage_me(request: Request, user: dict = Depends(current_user_session)) -> dict:
     pool = request.app.state.pool
     async with pool.connection() as conn:
@@ -610,7 +610,7 @@ async def ingest_metrics(
 
 # ---- public stats ----
 
-@router.get("/stats/totals")
+@router.get("/stats/claude/totals")
 async def stats_totals(request: Request) -> dict:
     pool = request.app.state.pool
     async with pool.connection() as conn:
@@ -636,7 +636,7 @@ async def stats_totals(request: Request) -> dict:
     }
 
 
-@router.get("/stats/leaderboard")
+@router.get("/stats/claude/leaderboard")
 async def stats_leaderboard(request: Request, limit: int = 100) -> dict:
     limit = max(1, min(limit, 500))
     pool = request.app.state.pool
