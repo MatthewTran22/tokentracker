@@ -1,3 +1,5 @@
+import pytest
+
 from tokentracker.codex_pricing import compute_cost_usd
 
 
@@ -36,11 +38,11 @@ def test_missing_model_returns_none():
 
 
 def test_cached_input_uses_discount_rate():
-    # All input is cached -> should be cheaper than the same volume of fresh input.
+    # cached_input rate per OpenAI pricing is 10% of input rate.
     fresh = compute_cost_usd("gpt-5.1", 1_000_000, 0, 0, 0)
     cached = compute_cost_usd("gpt-5.1", 0, 1_000_000, 0, 0)
     assert cached is not None and fresh is not None
-    assert cached < fresh
+    assert cached == pytest.approx(fresh * 0.1)
 
 
 def test_reasoning_billed_at_output_rate_by_default():
