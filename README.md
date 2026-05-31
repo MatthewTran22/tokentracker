@@ -72,43 +72,11 @@ Restart Claude Code. Events flow within ~5s. (Prefer to edit by hand? Paste just
 - `POST /v1/logs` — OTLP/protobuf logs; only `claude_code.api_request` records are stored
 - `POST /v1/metrics` — stub that accepts and discards
 
-## Deploying to Vercel
+## Deploying
 
-Vercel is supported via the `api/index.py` entry point and `vercel.json` at the repo root.
+This app runs on a single **Oracle Cloud VM** with Postgres on-box. See **[docs/deploy-vm.md](docs/deploy-vm.md)** for the one-time setup; after that, every push to `main` auto-deploys via `.github/workflows/deploy.yml`.
 
-**One-time setup (Neon as the Postgres host):**
-1. Create a Neon project at console.neon.tech → copy the **pooled** connection string (hostname contains `-pooler`, e.g. `ep-xxx-pooler.us-east-1.aws.neon.tech`). Do not use the direct endpoint — serverless fan-out will blow through connection limits.
-2. In Neon's SQL Editor, paste and run the contents of `sql/001_init.sql`, then `sql/002_password_reset.sql`.
-3. In the Vercel project dashboard → Settings → Environment Variables, set:
-   ```
-   DATABASE_URL         = <your Neon pooled connection string with ?sslmode=require>
-   AUTH_SECRET          = <openssl rand -hex 32>
-   COOKIE_SECURE        = 1
-   TRUST_PROXY          = 1
-   DB_POOL_MAX          = 1
-   DB_DISABLE_PREPARE   = 1
-   PUBLIC_BASE_URL      = https://<your-domain>      # used to build reset links
-   SMTP_HOST            = <smtp host>                # e.g. smtp.gmail.com, smtp.resend.com
-   SMTP_PORT            = 587
-   SMTP_USERNAME        = <smtp user / api login>
-   SMTP_PASSWORD        = <smtp password / api key>
-   SMTP_FROM            = "Token Tracker <no-reply@yourdomain>"
-   # SMTP_STARTTLS=0    # set if your provider uses implicit TLS on 465
-   ```
-   `DB_DISABLE_PREPARE=1` is **mandatory** on Neon's pooled endpoint — it uses pgbouncer in transaction mode, which breaks psycopg3's default prepared-statement caching.
-
-   If `SMTP_HOST` is unset, password-reset links are logged to stderr instead of mailed — handy for local dev, not safe for prod.
-4. **Enable "Deployment Protection"** on preview deployments (Vercel → Project → Settings → Deployment Protection → Vercel Authentication). Previews shouldn't be publicly accessible with a shared `AUTH_SECRET`.
-5. Deploy: `vercel deploy --prod` or push to main.
-
-Supabase works too — swap in its `*-pooler.supabase.com:6543` URL and keep `DB_DISABLE_PREPARE=1` (same pgbouncer constraint).
-
-**Caveats of running on Vercel:**
-- The OTLP ingest endpoint incurs one serverless invocation per Claude Code export (every ~5s per active session). Watch your invocation budget; for heavy use a VPS is cheaper.
-- `lifespan` runs per cold container — first request after scale-up pays ~1s cold start.
-- `rate_limits` table grows a bit; opportunistic prune happens inline, no cron needed.
-
-## Production deploy checklist (generic / non-Vercel)
+## Production deploy checklist
 
 1. **Set `AUTH_SECRET`** to 32+ bytes of random data. Rotating it invalidates every session and every ingest token — plan accordingly.
    ```bash
