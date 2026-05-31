@@ -1,4 +1,4 @@
-"""Live-stats hub, snapshot builder, and the /stats/stream SSE endpoint.
+"""Live-stats hub, snapshot builder, and the /stats/claude/stream SSE endpoint.
 
 These cover the behaviors that make the push model cheap on a small box:
 the hub bumps a version only on real change, fans one payload out to many
@@ -186,7 +186,7 @@ async def test_builder_shape_and_leaderboard_caching():
 
 
 # ---------------------------------------------------------------------------
-# /stats/stream route — drive the body iterator directly.
+# /stats/claude/stream route — drive the body iterator directly.
 # ---------------------------------------------------------------------------
 
 

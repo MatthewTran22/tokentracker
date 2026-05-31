@@ -396,7 +396,7 @@
     if (state.statsSource || document.hidden || !state.statsHandlers.length) return;
     if (!('EventSource' in window)) return;
     let es;
-    try { es = new EventSource('/stats/stream'); } catch { return; }
+    try { es = new EventSource('/stats/claude/stream'); } catch { return; }
     state.statsSource = es;
     es.addEventListener('snapshot', (e) => {
       let snap;

@@ -61,7 +61,7 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header Connection        "";
 
-        # SSE (/stats/stream): the app sends "X-Accel-Buffering: no", which nginx
+        # SSE (/stats/claude/stream): the app sends "X-Accel-Buffering: no", which nginx
         # honors to flush events immediately. The long read timeout keeps the
         # heartbeat-driven stream from being closed as idle.
         proxy_read_timeout 1h;

@@ -619,7 +619,7 @@ async def ingest_metrics(
 
 # ---- public stats ----
 #
-# Live updates are pushed over Server-Sent Events (/stats/stream); these REST
+# Live updates are pushed over Server-Sent Events (/stats/claude/stream); these REST
 # endpoints remain for instant first paint, direct API use, and as the client's
 # fallback when EventSource is unavailable. All three share the query helpers in
 # stats.py so the polled and streamed numbers can never diverge.
@@ -653,7 +653,7 @@ def _sse_frame(payload: bytes) -> bytes:
     return b"event: snapshot\ndata: " + payload + b"\n\n"
 
 
-@router.get("/stats/stream")
+@router.get("/stats/claude/stream")
 async def stats_stream(request: Request) -> StreamingResponse:
     """Push dashboard snapshots to the browser over Server-Sent Events.
 

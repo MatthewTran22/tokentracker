@@ -49,7 +49,7 @@ Restart Claude Code. Events flow within ~5s. (Prefer to edit by hand? Paste just
 - `GET /` — the SPA
 - `GET /stats/claude/totals` — aggregate spend + counts
 - `GET /stats/claude/leaderboard?limit=100` — ranked by cost, handles only
-- `GET /stats/stream` — Server-Sent Events; pushes a combined snapshot (totals + all four leaderboards) live to the dashboard. One shared snapshot is computed per interval and fanned out to every viewer, so database load is independent of audience size. The refresh loop only runs while at least one client is connected. The `/stats/claude/totals` and `/stats/claude/leaderboard` endpoints above remain for instant first paint and as the SSE-less fallback.
+- `GET /stats/claude/stream` — Server-Sent Events; pushes a combined snapshot (totals + all four leaderboards) live to the dashboard. One shared snapshot is computed per interval and fanned out to every viewer, so database load is independent of audience size. The refresh loop only runs while at least one client is connected. The `/stats/claude/totals` and `/stats/claude/leaderboard` endpoints above remain for instant first paint and as the SSE-less fallback.
 - `GET /healthz`
 
 **Web session cookie (HttpOnly):**
@@ -119,7 +119,7 @@ Supabase works too — swap in its `*-pooler.supabase.com:6543` URL and keep `DB
 4. Terminate TLS (Caddy / Cloudflare / Fly.io / nginx — whichever).
 5. Change the Postgres password in `docker-compose.yml` (default is `dev`).
 6. The Dockerfile CMD runs without `--reload`; `docker-compose.yml` adds `--reload` only for dev. Deploy using the image directly (e.g., `docker run tokentracker-app`), not via `docker compose up`, so dev-only overrides don't leak into prod.
-7. **If a reverse proxy sits in front of the app, disable response buffering for `/stats/stream`.** Server-Sent Events must flush each event immediately. The app already sends `X-Accel-Buffering: no` (honored by nginx); for others, ensure proxy buffering / gzip is off on that route. The single-worker uvicorn default fits a 1-vCPU box — one process keeps one shared snapshot and one refresh loop. The live-stats refresh can be tuned via env:
+7. **If a reverse proxy sits in front of the app, disable response buffering for `/stats/claude/stream`.** Server-Sent Events must flush each event immediately. The app already sends `X-Accel-Buffering: no` (honored by nginx); for others, ensure proxy buffering / gzip is off on that route. The single-worker uvicorn default fits a 1-vCPU box — one process keeps one shared snapshot and one refresh loop. The live-stats refresh can be tuned via env:
    ```
    STATS_REFRESH_SECONDS         = 2     # headline totals cadence
    STATS_LEADERBOARD_EVERY       = 3     # recompute leaderboards every Nth tick (~6s)
