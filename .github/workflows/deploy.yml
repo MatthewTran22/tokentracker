@@ -1,0 +1,123 @@
+name: Deploy
+
+# Continuous deployment to the Oracle Cloud VM (1 OCPU / 1 GB RAM).
+#
+# Flow: run tests -> build the Docker image on the GitHub runner (the 1 GB VM
+# must never build) -> push to GHCR -> SSH to the VM, which only PULLS the
+# image, applies idempotent migrations, and rolls the app container.
+#
+# Required repo secrets: SSH_HOST, SSH_USER, SSH_PRIVATE_KEY.
+# GHCR auth reuses the built-in GITHUB_TOKEN (no PAT needed).
+on:
+  push:
+    branches: [main]
+
+# Never let two deploys run against the same VM at once. Don't cancel an
+# in-flight deploy (a half-applied rollout is worse than a queued one).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/matthewtran22/tokentracker
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # Token scope the VM needs to pull the (private) image from GHCR.
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Forward these names into the remote shell session.
+          envs: GHCR_USER,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            cd ~/tokentracker
+
+            # Sync declarative config only (compose file + sql/). No build here.
+            git pull --ff-only
+
+            # Authenticate to GHCR with the ephemeral, per-run token, then pull.
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker compose -f docker-compose.prod.yml pull
+
+            # Bring the database up (or leave it running) and wait until healthy
+            # before touching the schema.
+            docker compose -f docker-compose.prod.yml up -d --wait db
+
+            # Apply migrations. sql/ files are idempotent (IF NOT EXISTS /
+            # ADD COLUMN IF NOT EXISTS), so re-running them every deploy is safe.
+            for f in sql/*.sql; do
+              echo "Applying migration: $f"
+              docker compose -f docker-compose.prod.yml exec -T db \
+                psql -v ON_ERROR_STOP=1 -U tokentracker -d tokentracker < "$f"
+            done
+
+            # Roll the app to the freshly pulled image and wait for health.
+            docker compose -f docker-compose.prod.yml up -d --wait app
+
+            # Reclaim disk on the small VM (dangling images from old deploys).
+            docker image prune -f
+
+            docker logout ghcr.io
