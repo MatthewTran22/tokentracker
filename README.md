@@ -47,8 +47,8 @@ Restart Claude Code. Events flow within ~5s. (Prefer to edit by hand? Paste just
 
 **Public (no auth):**
 - `GET /` — the SPA
-- `GET /stats/totals` — aggregate spend + counts
-- `GET /stats/leaderboard?limit=100` — ranked by cost, handles only
+- `GET /stats/claude/totals` — aggregate spend + counts
+- `GET /stats/claude/leaderboard?limit=100` — ranked by cost, handles only
 - `GET /healthz`
 
 **Web session cookie (HttpOnly):**
@@ -57,10 +57,10 @@ Restart Claude Code. Events flow within ~5s. (Prefer to edit by hand? Paste just
 - `POST /logout` — clears cookie + deletes the session row
 - `GET /me` — current user
 - `GET /me/full` — current user including email (for the dashboard)
-- `GET /usage/me` — per-user totals
+- `GET /usage/me/claude` — per-user totals
 - `PATCH /me/username` — rename
 - `PATCH /me/email` — set or change email
-- `POST /me/ingest-token/rotate` — invalidates the old ingest token, returns a new one
+- `POST /me/claude-ingest-token/rotate` — invalidates the old ingest token, returns a new one
 
 **Public (no auth, password reset):**
 - `POST /password-reset/request` — `{email}`; always returns `{ok:true}` (no enumeration). If the email matches a user, mails them a one-hour reset link.
