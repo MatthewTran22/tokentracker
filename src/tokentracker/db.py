@@ -32,7 +32,14 @@ async def lifespan(app: FastAPI):
     )
     await pool.open(wait=True)
     app.state.pool = pool
+    # The live-stats hub is created lazily on the first SSE subscriber (see
+    # stats.get_hub); we only need to make sure its background refresh task is
+    # torn down before the pool closes.
+    app.state.stats_hub = None
     try:
         yield
     finally:
+        hub = getattr(app.state, "stats_hub", None)
+        if hub is not None:
+            await hub.shutdown()
         await pool.close()

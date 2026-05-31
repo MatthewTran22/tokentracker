@@ -1,0 +1,69 @@
+# Reverse proxy for tokentracker — PROD ONLY. TLS lives exclusively here;
+# docker-compose.yml (dev) talks to the app directly on :8000 with no nginx.
+#
+# Rendered at container start: the official nginx image runs envsubst over
+# /etc/nginx/templates/*.template. NGINX_ENVSUBST_FILTER=DOMAIN restricts
+# substitution to ${DOMAIN} so nginx's own $variables are left untouched.
+
+upstream tokentracker_app {
+    server app:8000;
+    keepalive 16;
+}
+
+# ---- Port 80: ACME HTTP-01 challenge, then redirect everything to HTTPS ----
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    server_tokens off;
+
+    # Let's Encrypt webroot challenge — must stay reachable over plain HTTP.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ---- Port 443: TLS termination + reverse proxy to the app ------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+    server_tokens off;
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+
+    # Modern, dhparam-free TLS (ECDHE only — avoids slow DH param gen on 1 vCPU).
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    # Match the app's 5 MB body cap so oversized payloads die at the edge.
+    client_max_body_size 5m;
+
+    location / {
+        proxy_pass http://tokentracker_app;
+        proxy_http_version 1.1;
+
+        # Client info for the app. With TRUST_PROXY=1 it keys rate limits on
+        # X-Real-IP; X-Forwarded-Proto tells it the original scheme is https.
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Connection        "";
+
+        # SSE (/stats/stream): the app sends "X-Accel-Buffering: no", which nginx
+        # honors to flush events immediately. The long read timeout keeps the
+        # heartbeat-driven stream from being closed as idle.
+        proxy_read_timeout 1h;
+    }
+}

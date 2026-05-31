@@ -3,6 +3,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import StreamingResponse
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceResponse,
 )
@@ -15,6 +16,14 @@ from pydantic import BaseModel
 from .mailer import send_reset_email
 from .otlp import parse_api_request_events
 from .ratelimit import check_rate
+from .stats import (
+    HEARTBEAT_SECONDS,
+    MAX_CLIENTS,
+    MODEL_FAMILY_PATTERNS,
+    fetch_leaderboard,
+    fetch_totals,
+    get_hub,
+)
 from .security import (
     clear_session_cookie,
     current_user_ingest,
@@ -609,13 +618,11 @@ async def ingest_metrics(
 
 
 # ---- public stats ----
-
-# Model name → family bucket. Substring match is intentional: real model
-# strings look like "claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5",
-# and we want new minor versions to slot in without code changes. Anything
-# that matches none falls into "other" and isn't surfaced in the UI.
-_MODEL_FAMILIES = ("opus", "sonnet", "haiku")
-_MODEL_FAMILY_PATTERNS = {f: f"%{f}%" for f in _MODEL_FAMILIES}
+#
+# Live updates are pushed over Server-Sent Events (/stats/stream); these REST
+# endpoints remain for instant first paint, direct API use, and as the client's
+# fallback when EventSource is unavailable. All three share the query helpers in
+# stats.py so the polled and streamed numbers can never diverge.
 
 
 @router.get("/stats/claude/totals")
@@ -623,63 +630,7 @@ async def stats_totals(request: Request) -> dict:
     pool = request.app.state.pool
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                SELECT
-                    (SELECT count(*)::bigint FROM users)    AS total_users,
-                    count(*)::bigint                        AS total_requests,
-                    COALESCE(sum(billed_tokens), 0)         AS billed_tokens,
-                    COALESCE(sum(cost_usd), 0)::float       AS total_cost_usd,
-                    max(occurred_at)                        AS last_activity_at
-                FROM api_requests
-                """
-            )
-            totals = await cur.fetchone()
-
-            await cur.execute(
-                """
-                SELECT
-                    CASE
-                        WHEN model ILIKE %s THEN 'opus'
-                        WHEN model ILIKE %s THEN 'sonnet'
-                        WHEN model ILIKE %s THEN 'haiku'
-                        ELSE 'other'
-                    END                                     AS family,
-                    COALESCE(sum(cost_usd), 0)::float       AS cost_usd,
-                    COALESCE(sum(billed_tokens), 0)         AS billed_tokens,
-                    count(*)::bigint                        AS requests
-                FROM api_requests
-                WHERE model IS NOT NULL
-                GROUP BY family
-                """,
-                (
-                    _MODEL_FAMILY_PATTERNS["opus"],
-                    _MODEL_FAMILY_PATTERNS["sonnet"],
-                    _MODEL_FAMILY_PATTERNS["haiku"],
-                ),
-            )
-            model_rows = await cur.fetchall()
-
-    by_model: dict[str, dict] = {
-        f: {"cost_usd": 0.0, "billed_tokens": 0, "requests": 0}
-        for f in _MODEL_FAMILIES
-    }
-    for family, cost_usd, billed_tokens, requests in model_rows:
-        if family in by_model:
-            by_model[family] = {
-                "cost_usd": cost_usd,
-                "billed_tokens": billed_tokens,
-                "requests": requests,
-            }
-
-    return {
-        "total_users": totals[0],
-        "total_requests": totals[1],
-        "billed_tokens": totals[2],
-        "total_cost_usd": totals[3],
-        "last_activity_at": totals[4].isoformat() if totals[4] else None,
-        "by_model": by_model,
-    }
+            return await fetch_totals(cur)
 
 
 @router.get("/stats/claude/leaderboard")
@@ -690,65 +641,64 @@ async def stats_leaderboard(
     # Silently ignore unknown families so callers (and direct API users) get
     # the unfiltered board instead of an error — same forgiving behavior as
     # the original endpoint.
-    pattern = _MODEL_FAMILY_PATTERNS.get(model) if model else None
+    pattern = MODEL_FAMILY_PATTERNS.get(model) if model else None
     pool = request.app.state.pool
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
-            if pattern is None:
-                await cur.execute(
-                    """
-                    SELECT
-                        u.id,
-                        COALESCE(u.username, 'user ' || u.id::text) AS handle,
-                        COALESCE(sum(r.cost_usd), 0)::float         AS total_cost_usd,
-                        COALESCE(sum(r.billed_tokens), 0)           AS billed_tokens,
-                        count(r.id)::bigint                         AS requests,
-                        max(r.occurred_at)                          AS last_activity_at
-                    FROM users u
-                    LEFT JOIN api_requests r ON r.user_id = u.id
-                    GROUP BY u.id, u.username
-                    ORDER BY total_cost_usd DESC, u.id ASC
-                    LIMIT %s
-                    """,
-                    (limit,),
-                )
-            else:
-                # INNER JOIN so users with no activity in this family fall off
-                # entirely — the filtered board shouldn't list them at $0.
-                await cur.execute(
-                    """
-                    SELECT
-                        u.id,
-                        COALESCE(u.username, 'user ' || u.id::text) AS handle,
-                        COALESCE(sum(r.cost_usd), 0)::float         AS total_cost_usd,
-                        COALESCE(sum(r.billed_tokens), 0)           AS billed_tokens,
-                        count(r.id)::bigint                         AS requests,
-                        max(r.occurred_at)                          AS last_activity_at
-                    FROM users u
-                    JOIN api_requests r
-                      ON r.user_id = u.id AND r.model ILIKE %s
-                    GROUP BY u.id, u.username
-                    ORDER BY total_cost_usd DESC, u.id ASC
-                    LIMIT %s
-                    """,
-                    (pattern, limit),
-                )
-            rows = await cur.fetchall()
-    return {
-        "model": model if pattern else None,
-        "rows": [
-            {
-                "rank": i + 1,
-                "user_id": r[0],
-                "handle": r[1],
-                "total_cost_usd": r[2],
-                "billed_tokens": r[3],
-                "requests": r[4],
-                "last_activity_at": r[5].isoformat() if r[5] else None,
-            }
-            for i, r in enumerate(rows)
-        ]
-    }
+            rows = await fetch_leaderboard(cur, pattern, limit)
+    return {"model": model if pattern else None, "rows": rows}
+
+
+def _sse_frame(payload: bytes) -> bytes:
+    return b"event: snapshot\ndata: " + payload + b"\n\n"
+
+
+@router.get("/stats/stream")
+async def stats_stream(request: Request) -> StreamingResponse:
+    """Push dashboard snapshots to the browser over Server-Sent Events.
+
+    One shared snapshot is fanned out to every client, so DB load is decoupled
+    from audience size. The hub's refresh loop is reference-counted: it spins up
+    on the first subscriber and idles once the last one leaves.
+    """
+    hub = get_hub(request.app)
+    # Hard cap protects the small box from a connection flood. EventSource will
+    # reconnect on its own once capacity frees up.
+    if hub.subscribers >= MAX_CLIENTS:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "stream capacity reached",
+            headers={"Retry-After": "30"},
+        )
+    await hub.subscribe()
+
+    async def gen():
+        last = -1
+        try:
+            while True:
+                if hub.version != last:
+                    last = hub.version
+                    yield _sse_frame(hub.payload)
+                    continue
+                if await request.is_disconnected():
+                    break
+                # Wakes on the next change, or emits a keep-alive comment so
+                # dead connections are noticed and proxies don't time us out.
+                if not await hub.wait_for_change(HEARTBEAT_SECONDS):
+                    yield b": keep-alive\n\n"
+        finally:
+            hub.unsubscribe()
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "Connection": "keep-alive",
+            # Disable proxy/Nginx response buffering — SSE must flush per event.
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/healthz")

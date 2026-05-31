@@ -117,6 +117,12 @@ jobs:
             # Roll the app to the freshly pulled image and wait for health.
             docker compose -f docker-compose.prod.yml up -d --wait app
 
+            # Bring up / refresh the edge (nginx + certbot renewer). nginx only
+            # serves once TLS has been bootstrapped once via
+            # nginx/init-letsencrypt.sh (see docs/deploy-vm.md); after that it
+            # stays up across deploys.
+            docker compose -f docker-compose.prod.yml up -d nginx certbot
+
             # Reclaim disk on the small VM (dangling images from old deploys).
             docker image prune -f
 

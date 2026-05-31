@@ -313,6 +313,11 @@
     username: null,
     pollers: [],
     rafs: [],
+    // Live stats over Server-Sent Events. One shared connection feeds whichever
+    // view is active; statsHandlers holds the active view's snapshot callbacks.
+    statsSource: null,
+    statsSnapshot: null,
+    statsHandlers: [],
   };
 
   function makeTicker(el, fmt) {
@@ -368,8 +373,53 @@
     state.pollers = [];
     state.rafs.forEach(cancelAnimationFrame);
     state.rafs = [];
+    closeStatsStream();
   }
-  function poll(fn, ms) { fn(); state.pollers.push(setInterval(fn, ms)); }
+  // Visibility-aware: a backgrounded tab stops fetching (and re-fetches on
+  // focus) so it never hammers the server while nobody's looking. Used by the
+  // /me dashboard and as the SSE-less fallback for the public stats views.
+  function poll(fn, ms) {
+    const run = () => { if (!document.hidden) fn(); };
+    run();
+    state.pollers.push(setInterval(run, ms));
+  }
+
+  // --- live stats stream (Server-Sent Events) ---
+  function closeStatsStream() {
+    if (state.statsSource) { state.statsSource.close(); state.statsSource = null; }
+    state.statsHandlers = [];
+    state.statsSnapshot = null;
+  }
+  function ensureStatsStream() {
+    // Don't hold a connection (or keep the server's refresh loop alive) while
+    // the tab is hidden or no view is listening.
+    if (state.statsSource || document.hidden || !state.statsHandlers.length) return;
+    if (!('EventSource' in window)) return;
+    let es;
+    try { es = new EventSource('/stats/stream'); } catch { return; }
+    state.statsSource = es;
+    es.addEventListener('snapshot', (e) => {
+      let snap;
+      try { snap = JSON.parse(e.data); } catch { return; }
+      state.statsSnapshot = snap;
+      for (const h of state.statsHandlers) { try { h(snap); } catch { /* ignore */ } }
+    });
+    // EventSource reconnects on its own after transient errors / a 503 cap.
+  }
+  function onStats(handler) {
+    state.statsHandlers.push(handler);
+    if (state.statsSnapshot) { try { handler(state.statsSnapshot); } catch { /* ignore */ } }
+    ensureStatsStream();
+  }
+  // Pause the stream when the tab is hidden, resume when it returns — so a box
+  // watched only by backgrounded tabs goes fully idle.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (state.statsSource) { state.statsSource.close(); state.statsSource = null; }
+    } else {
+      ensureStatsStream();
+    }
+  });
 
   function showOnly(sectionId) {
     for (const s of document.querySelectorAll('main > section')) s.classList.add('hidden');
@@ -418,19 +468,24 @@
     const tickOpus = usdTicker($('totals-opus'));
     const tickSonnet = usdTicker($('totals-sonnet'));
     const tickHaiku = usdTicker($('totals-haiku'));
-    poll(async () => {
-      try {
-        const d = await fetchJson('/stats/claude/totals');
-        tickCost(Number(d.total_cost_usd || 0));
-        tickTokens(d.billed_tokens || 0);
-        tickRequests(d.total_requests || 0);
-        tickUsers(d.total_users || 0);
-        const bm = d.by_model || {};
-        tickOpus(Number((bm.opus && bm.opus.cost_usd) || 0));
-        tickSonnet(Number((bm.sonnet && bm.sonnet.cost_usd) || 0));
-        tickHaiku(Number((bm.haiku && bm.haiku.cost_usd) || 0));
-      } catch { /* ignore transient errors */ }
-    }, POLL_MS);
+    const applyTotals = (d) => {
+      if (!d) return;
+      tickCost(Number(d.total_cost_usd || 0));
+      tickTokens(d.billed_tokens || 0);
+      tickRequests(d.total_requests || 0);
+      tickUsers(d.total_users || 0);
+      const bm = d.by_model || {};
+      tickOpus(Number((bm.opus && bm.opus.cost_usd) || 0));
+      tickSonnet(Number((bm.sonnet && bm.sonnet.cost_usd) || 0));
+      tickHaiku(Number((bm.haiku && bm.haiku.cost_usd) || 0));
+    };
+    if ('EventSource' in window) {
+      // One-shot fetch for instant paint, then live pushes over SSE.
+      fetchJson('/stats/claude/totals').then(applyTotals).catch(() => {});
+      onStats(snap => applyTotals(snap.totals));
+    } else {
+      poll(() => fetchJson('/stats/claude/totals').then(applyTotals).catch(() => {}), POLL_MS);
+    }
   }
 
   function renderLeaderboard() {
@@ -441,42 +496,59 @@
     let currentModel = '';
     for (const t of tabs) t.classList.toggle('active', t.dataset.model === '');
 
+    const renderRows = (rows) => {
+      if (!rows || rows.length === 0) {
+        body.innerHTML = currentModel
+          ? `<tr><td colspan="5" class="empty">no ${escapeHtml(currentModel)} spend yet</td></tr>`
+          : '<tr><td colspan="5" class="empty">no users yet</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(r => `
+        <tr class="${r.rank <= 3 ? 'top' : ''} ${r.user_id === state.userId ? 'me' : ''}">
+          <td class="rank">${r.rank}</td>
+          <td class="handle">${escapeHtml(r.handle)}</td>
+          <td class="num">${fmtUsd.format(r.total_cost_usd || 0)}</td>
+          <td class="num">${fmtInt.format(r.billed_tokens || 0)}</td>
+          <td class="num">${fmtInt.format(r.requests || 0)}</td>
+        </tr>
+      `).join('');
+    };
+
+    // The stream carries all four boards, so a tab switch repaints instantly
+    // from the in-memory snapshot — no request per click.
+    const renderFromSnapshot = (snap) => {
+      const boards = (snap && snap.leaderboards) || {};
+      renderRows(boards[currentModel || 'all']);
+    };
     const fetchAndRender = async () => {
       try {
         const url = '/stats/claude/leaderboard?limit=100'
           + (currentModel ? '&model=' + encodeURIComponent(currentModel) : '');
         const d = await fetchJson(url);
-        if (!d.rows || d.rows.length === 0) {
-          body.innerHTML = currentModel
-            ? `<tr><td colspan="5" class="empty">no ${escapeHtml(currentModel)} spend yet</td></tr>`
-            : '<tr><td colspan="5" class="empty">no users yet</td></tr>';
-          return;
-        }
-        body.innerHTML = d.rows.map(r => `
-          <tr class="${r.rank <= 3 ? 'top' : ''} ${r.user_id === state.userId ? 'me' : ''}">
-            <td class="rank">${r.rank}</td>
-            <td class="handle">${escapeHtml(r.handle)}</td>
-            <td class="num">${fmtUsd.format(r.total_cost_usd || 0)}</td>
-            <td class="num">${fmtInt.format(r.billed_tokens || 0)}</td>
-            <td class="num">${fmtInt.format(r.requests || 0)}</td>
-          </tr>
-        `).join('');
+        renderRows(d.rows);
       } catch (e) {
         body.innerHTML = `<tr><td colspan="5" class="empty">error: ${escapeHtml(e.message)}</td></tr>`;
       }
     };
 
+    const useStream = 'EventSource' in window;
     for (const tab of tabs) {
       tab.onclick = () => {
         if (tab.dataset.model === currentModel) return;
         currentModel = tab.dataset.model;
         for (const t of tabs) t.classList.toggle('active', t === tab);
-        body.innerHTML = '<tr><td colspan="5" class="empty">loading…</td></tr>';
-        fetchAndRender();
+        if (useStream && state.statsSnapshot) {
+          renderFromSnapshot(state.statsSnapshot);
+        } else {
+          body.innerHTML = '<tr><td colspan="5" class="empty">loading…</td></tr>';
+          fetchAndRender();
+        }
       };
     }
 
-    poll(fetchAndRender, POLL_MS);
+    body.innerHTML = '<tr><td colspan="5" class="empty">loading…</td></tr>';
+    if (useStream) onStats(renderFromSnapshot);
+    else poll(fetchAndRender, POLL_MS);
   }
 
   function renderSetup() {
