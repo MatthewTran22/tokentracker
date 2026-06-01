@@ -509,7 +509,6 @@ h1.hero-title {
   font-size: 13px;
   color: var(--hot-2);
   font-variant-numeric: tabular-nums;
-  text-shadow: 2px 2px 0 var(--wood-3);
 }
 
 /* Leaderboard model-family filter tabs */

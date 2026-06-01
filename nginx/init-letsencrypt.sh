@@ -26,8 +26,11 @@ EMAIL="${LETSENCRYPT_EMAIL:-}"
 STAGING="${STAGING:-0}"
 cert_path="/etc/letsencrypt/live/$DOMAIN"
 
-echo "### Pulling images ..."
-$COMPOSE pull
+# Only the public edge images (nginx + certbot) — this bootstrap never uses the
+# app image, which is private on GHCR and already present from the deploy.
+# Pulling it here would need GHCR auth the VM deliberately doesn't have.
+echo "### Pulling edge images (nginx + certbot) ..."
+$COMPOSE pull nginx certbot
 
 echo "### Creating a temporary self-signed certificate for $DOMAIN ..."
 $COMPOSE run --rm --entrypoint sh certbot -c \
