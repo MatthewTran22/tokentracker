@@ -3,8 +3,13 @@ name: Deploy
 # Continuous deployment to the Oracle Cloud VM (1 OCPU / 1 GB RAM).
 #
 # Flow: run tests -> build the Docker image on the GitHub runner (the 1 GB VM
-# must never build) -> push to GHCR -> SSH to the VM, which only PULLS the
+# must never build) -> push to GHCR -> scp the deploy config (compose file +
+# sql/ + nginx/) from the runner to the VM, then SSH in: the VM only PULLS the
 # image, applies idempotent migrations, and rolls the app container.
+#
+# The VM holds NO repo clone and needs NO GitHub read access — the runner ships
+# the handful of host-side files it needs each deploy. App source lives only in
+# the image.
 #
 # Required repo secrets: SSH_HOST, SSH_USER, SSH_PRIVATE_KEY.
 # GHCR auth reuses the built-in GITHUB_TOKEN (no PAT needed).
@@ -80,6 +85,27 @@ jobs:
       contents: read
       packages: read
     steps:
+      # The runner already has the repo; the VM does not. Pull it onto the
+      # runner so we can ship the host-side bits of the stack to the box.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Ship the declarative config to the VM: the compose manifest, the
+      # idempotent migrations, and the bind-mounted nginx config. App source is
+      # already inside the image, so it is deliberately NOT copied. This
+      # replaces the old `git pull` on the VM — the box needs no clone and no
+      # GitHub access. `source` lists only these paths, so the VM's .env and the
+      # db_data volume are never touched.
+      - name: Copy deploy config to the VM
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "docker-compose.prod.yml,sql,nginx"
+          target: "~/tokentracker"
+          overwrite: true
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1
         env:
@@ -95,9 +121,8 @@ jobs:
             set -euo pipefail
             cd ~/tokentracker
 
-            # Sync declarative config only (compose file + sql/). No build here.
-            git pull --ff-only
-
+            # The config files (compose + sql/ + nginx/) were just delivered by
+            # the scp step above — no build and no git pull here.
             # Authenticate to GHCR with the ephemeral, per-run token, then pull.
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             docker compose -f docker-compose.prod.yml pull

@@ -11,11 +11,14 @@ to `main` deploys automatically via `.github/workflows/deploy.yml`.
    - re-runs the tests,
    - builds the Docker image **on the GitHub runner** (never on the VM) and
      pushes it to `ghcr.io/matthewtran22/tokentracker`,
-   - SSHes to the VM, which `git pull`s the latest `docker-compose.prod.yml`,
-     `nginx/`, and `sql/`, **pulls** the new image, applies idempotent
-     migrations, rolls the `app` container, and refreshes nginx + certbot.
+   - **scp**s the deploy config (`docker-compose.prod.yml`, `nginx/`, `sql/`)
+     from the runner into `~/tokentracker` on the VM, then SSHes in: the VM
+     **pulls** the new image, applies idempotent migrations, rolls the `app`
+     container, and refreshes nginx + certbot.
 
-The VM only ever pulls a prebuilt image — the 1 GB box never compiles anything.
+The VM only ever pulls a prebuilt image — the 1 GB box never compiles anything,
+holds no repo clone, and needs no GitHub read access (just SSH access for the
+runner, plus the per-run `GITHUB_TOKEN` to pull the image).
 
 **Topology / what's exposed:** only **nginx** is published to the host
 (ports 80 + 443). It terminates TLS and reverse-proxies to `app:8000` over a
@@ -74,20 +77,18 @@ sudo usermod -aG docker "$USER"   # log out/in afterwards so `docker` works with
 
 (`docker compose` v2 ships with the Docker engine above.)
 
-## 5. Clone the repo
+## 5. Create the deploy directory
 
-The deploy step runs `git pull` on the VM to sync `docker-compose.prod.yml`
-and `sql/`. The VM therefore needs **read** access to the repo:
+There is **no repo clone on the VM and no GitHub credentials are needed**. On
+every deploy the workflow **scp**s `docker-compose.prod.yml`, `sql/`, and
+`nginx/` from the GitHub runner into `~/tokentracker`; the box only ever *pulls*
+the image (using the per-run `GITHUB_TOKEN`). The scp step creates the
+directory if it's missing, but create it now so your `.env` (next step) has a
+home:
 
 ```bash
-git clone https://github.com/MatthewTran22/tokentracker.git ~/tokentracker
-cd ~/tokentracker
-git checkout main
+mkdir -p ~/tokentracker
 ```
-
-- If the repo is **public**, HTTPS pulls work with no credentials.
-- If it's **private**, add a read-only deploy key to the repo and clone via
-  SSH (`git@github.com:MatthewTran22/tokentracker.git`), or cache an HTTPS PAT.
 
 ## 6. Create the VM `.env`
 
@@ -171,8 +172,10 @@ curl -fsS http://$DOMAIN/ -I      # 301 redirect to https
   public.
 - **OOM / container killed:** confirm the swapfile is active (`swapon --show`)
   and lower `mem_limit` in `docker-compose.prod.yml` if needed.
-- **`git pull` fails on the VM:** the repo is private and the VM lacks
-  credentials — see step 5.
+- **config copy (scp) fails:** check the `SSH_HOST` / `SSH_USER` /
+  `SSH_PRIVATE_KEY` secrets and that port 22 is reachable from GitHub's runners
+  (Oracle Security List + host firewall). The same key authenticates both the
+  scp and ssh steps. The VM needs no GitHub access of its own.
 - **Migrations fail:** they run with `ON_ERROR_STOP=1`; read the failing
   `psql` output in the Actions deploy log. Because the files are idempotent,
   a fixed file can simply be redeployed.
