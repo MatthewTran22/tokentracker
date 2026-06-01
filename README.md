@@ -49,6 +49,7 @@ Restart Claude Code. Events flow within ~5s. (Prefer to edit by hand? Paste just
 - `GET /` — the SPA
 - `GET /stats/claude/totals` — aggregate spend + counts
 - `GET /stats/claude/leaderboard?limit=100` — ranked by cost, handles only
+- `GET /stats/claude/stream` — Server-Sent Events; pushes a combined snapshot (totals + all four leaderboards) live to the dashboard. One shared snapshot is computed per interval and fanned out to every viewer, so database load is independent of audience size. The refresh loop only runs while at least one client is connected. The `/stats/claude/totals` and `/stats/claude/leaderboard` endpoints above remain for instant first paint and as the SSE-less fallback.
 - `GET /healthz`
 
 **Web session cookie (HttpOnly):**
@@ -71,43 +72,11 @@ Restart Claude Code. Events flow within ~5s. (Prefer to edit by hand? Paste just
 - `POST /v1/logs` — OTLP/protobuf logs; only `claude_code.api_request` records are stored
 - `POST /v1/metrics` — stub that accepts and discards
 
-## Deploying to Vercel
+## Deploying
 
-Vercel is supported via the `api/index.py` entry point and `vercel.json` at the repo root.
+This app runs on a single **Oracle Cloud VM** with Postgres on-box. See **[docs/deploy-vm.md](docs/deploy-vm.md)** for the one-time setup; after that, every push to `main` auto-deploys via `.github/workflows/deploy.yml`.
 
-**One-time setup (Neon as the Postgres host):**
-1. Create a Neon project at console.neon.tech → copy the **pooled** connection string (hostname contains `-pooler`, e.g. `ep-xxx-pooler.us-east-1.aws.neon.tech`). Do not use the direct endpoint — serverless fan-out will blow through connection limits.
-2. In Neon's SQL Editor, paste and run the contents of `sql/001_init.sql`, then `sql/002_password_reset.sql`.
-3. In the Vercel project dashboard → Settings → Environment Variables, set:
-   ```
-   DATABASE_URL         = <your Neon pooled connection string with ?sslmode=require>
-   AUTH_SECRET          = <openssl rand -hex 32>
-   COOKIE_SECURE        = 1
-   TRUST_PROXY          = 1
-   DB_POOL_MAX          = 1
-   DB_DISABLE_PREPARE   = 1
-   PUBLIC_BASE_URL      = https://<your-domain>      # used to build reset links
-   SMTP_HOST            = <smtp host>                # e.g. smtp.gmail.com, smtp.resend.com
-   SMTP_PORT            = 587
-   SMTP_USERNAME        = <smtp user / api login>
-   SMTP_PASSWORD        = <smtp password / api key>
-   SMTP_FROM            = "Token Tracker <no-reply@yourdomain>"
-   # SMTP_STARTTLS=0    # set if your provider uses implicit TLS on 465
-   ```
-   `DB_DISABLE_PREPARE=1` is **mandatory** on Neon's pooled endpoint — it uses pgbouncer in transaction mode, which breaks psycopg3's default prepared-statement caching.
-
-   If `SMTP_HOST` is unset, password-reset links are logged to stderr instead of mailed — handy for local dev, not safe for prod.
-4. **Enable "Deployment Protection"** on preview deployments (Vercel → Project → Settings → Deployment Protection → Vercel Authentication). Previews shouldn't be publicly accessible with a shared `AUTH_SECRET`.
-5. Deploy: `vercel deploy --prod` or push to main.
-
-Supabase works too — swap in its `*-pooler.supabase.com:6543` URL and keep `DB_DISABLE_PREPARE=1` (same pgbouncer constraint).
-
-**Caveats of running on Vercel:**
-- The OTLP ingest endpoint incurs one serverless invocation per Claude Code export (every ~5s per active session). Watch your invocation budget; for heavy use a VPS is cheaper.
-- `lifespan` runs per cold container — first request after scale-up pays ~1s cold start.
-- `rate_limits` table grows a bit; opportunistic prune happens inline, no cron needed.
-
-## Production deploy checklist (generic / non-Vercel)
+## Production deploy checklist
 
 1. **Set `AUTH_SECRET`** to 32+ bytes of random data. Rotating it invalidates every session and every ingest token — plan accordingly.
    ```bash
@@ -118,6 +87,14 @@ Supabase works too — swap in its `*-pooler.supabase.com:6543` URL and keep `DB
 4. Terminate TLS (Caddy / Cloudflare / Fly.io / nginx — whichever).
 5. Change the Postgres password in `docker-compose.yml` (default is `dev`).
 6. The Dockerfile CMD runs without `--reload`; `docker-compose.yml` adds `--reload` only for dev. Deploy using the image directly (e.g., `docker run tokentracker-app`), not via `docker compose up`, so dev-only overrides don't leak into prod.
+7. **If a reverse proxy sits in front of the app, disable response buffering for `/stats/claude/stream`.** Server-Sent Events must flush each event immediately. The app already sends `X-Accel-Buffering: no` (honored by nginx); for others, ensure proxy buffering / gzip is off on that route. The single-worker uvicorn default fits a 1-vCPU box — one process keeps one shared snapshot and one refresh loop. The live-stats refresh can be tuned via env:
+   ```
+   STATS_REFRESH_SECONDS         = 2     # headline totals cadence
+   STATS_LEADERBOARD_EVERY       = 3     # recompute leaderboards every Nth tick (~6s)
+   STATS_STREAM_MAX_CLIENTS      = 256   # hard cap on concurrent SSE connections
+   STATS_STREAM_HEARTBEAT_SECONDS = 15   # keep-alive comment interval
+   ```
+   On a small box the snapshot is computed once per interval regardless of viewer count, and only while at least one client is connected — an unwatched instance issues zero stats queries.
 
 ## Security properties
 

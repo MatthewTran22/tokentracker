@@ -1,9 +1,9 @@
 services:
-  # Local Postgres for dev. Opt in via `--profile local`:
-  #   docker compose --profile local up -d
-  # Without the flag, the app uses whatever DATABASE_URL .env provides (e.g. Neon).
+  # Local Postgres for dev. Always starts with `docker compose up -d` so the
+  # dev stack is self-contained — no shared Neon access required and prod
+  # data is impossible to clobber from your laptop. sql/ is mounted into
+  # docker-entrypoint-initdb.d so 001/002/003 run on a fresh data volume.
   db:
-    profiles: ["local"]
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: tokentracker
@@ -22,15 +22,21 @@ services:
 
   app:
     build: .
-    # .env drives DATABASE_URL, AUTH_SECRET, COOKIE_SECURE, TRUST_PROXY, DB_POOL_MAX,
-    # DB_DISABLE_PREPARE. Keep .env gitignored.
+    # .env drives AUTH_SECRET, COOKIE_SECURE, TRUST_PROXY, DB_POOL_MAX,
+    # DB_DISABLE_PREPARE. DATABASE_URL is forced to the local db container
+    # below so dev can never accidentally point at prod (Neon).
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql://tokentracker:dev@db:5432/tokentracker
     ports:
       - "8000:8000"
     volumes:
       - ./src:/app/src:ro
       - ./scripts:/app/scripts:ro
       - ./tests:/app/tests:ro
+    depends_on:
+      db:
+        condition: service_healthy
     # Dev-only override of the production CMD: --reload watches the bind-mounted source.
     command: uvicorn tokentracker.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 

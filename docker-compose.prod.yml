@@ -1,0 +1,104 @@
+# Production stack for the Oracle Cloud Always-Free VM (1 OCPU / 1 GB RAM).
+#
+# Differs from docker-compose.yml (dev) in every way that matters for prod:
+#   - nginx terminates TLS and is the ONLY service exposed to the host (80/443)
+#   - app + db sit on a private network; db has no host port and no internet
+#     (internal: true) — the app reaches it, the outside world cannot
+#   - app runs from the GHCR image built in CI (no `build:` -> VM never compiles)
+#   - no source bind-mounts and no --reload
+#   - memory is capped so everything fits in 1 GB (keep a swapfile as a backstop)
+#
+# TLS lives ONLY in this prod file. docker-compose.yml (dev) stays HTTP on :8000.
+#
+# Secrets/config come from a .env file that lives ONLY on the VM (never
+# committed). Required: AUTH_SECRET, POSTGRES_PASSWORD, DOMAIN. See
+# docs/deploy-vm.md, including the one-time TLS bootstrap (nginx/init-letsencrypt.sh).
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env (e.g. tokentracker.example.com)}
+      # Only substitute ${DOMAIN} in templates; leave nginx's own $vars alone.
+      NGINX_ENVSUBST_FILTER: "DOMAIN"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - certbot_conf:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      - app
+    networks:
+      - edge
+    restart: unless-stopped
+    mem_limit: 64m
+    # Reload every 6h so auto-renewed certs are picked up without a redeploy.
+    # We must call /docker-entrypoint.sh (with `nginx` as $1) so the image's
+    # envsubst step renders templates/default.conf.template before nginx starts;
+    # a bare `nginx ...` here would skip that and the proxy config wouldn't load.
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & /docker-entrypoint.sh nginx -g \"daemon off;\"'"
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    networks:
+      - edge
+    restart: unless-stopped
+    # Try renewal twice a day; certbot no-ops until ~30 days before expiry.
+    # Initial issuance is done out-of-band by nginx/init-letsencrypt.sh.
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done'"
+
+  app:
+    image: ghcr.io/matthewtran22/tokentracker:latest
+    # AUTH_SECRET, COOKIE_SECURE, TRUST_PROXY, DB_POOL_MAX, DB_DISABLE_PREPARE.
+    env_file: .env
+    environment:
+      # Force the app at the in-stack Postgres so it can never point elsewhere.
+      DATABASE_URL: postgresql://tokentracker:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/tokentracker
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - edge      # reached by nginx; also gives the app outbound internet (mailer)
+      - internal  # reaches the database
+    restart: unless-stopped
+    mem_limit: 448m
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: tokentracker
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: tokentracker
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # First boot only: docker-entrypoint-initdb.d runs sql/ against a FRESH
+      # volume. Subsequent schema changes are applied by the idempotent
+      # migration step in .github/workflows/deploy.yml.
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tokentracker -d tokentracker"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+    restart: unless-stopped
+    mem_limit: 384m
+    shm_size: 128mb
+
+networks:
+  edge:
+  # No host-published ports and no outbound internet: the database is reachable
+  # only by the app, over this network.
+  internal:
+    internal: true
+
+volumes:
+  db_data:
+  certbot_conf:
+  certbot_www:

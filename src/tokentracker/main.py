@@ -91,6 +91,11 @@ async def index() -> FileResponse:
     return FileResponse(_INDEX, media_type="text/html")
 
 
+@app.get("/style.css", include_in_schema=False)
+async def stylesheet() -> FileResponse:
+    return FileResponse(_STATIC / "style.css", media_type="text/css")
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon_ico() -> FileResponse:
     return FileResponse(_STATIC / "favicon.ico", media_type="image/x-icon")

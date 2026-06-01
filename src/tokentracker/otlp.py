@@ -100,6 +100,7 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
                     attrs.get("cache_creation_tokens")
                 )
                 cost_usd = _as_float(attrs.get("cost_usd"))
+                model = _as_str(attrs.get("model"))
 
                 occurred_at = _ns_to_datetime(rec.time_unix_nano) or _ns_to_datetime(
                     rec.observed_time_unix_nano
@@ -108,5 +109,6 @@ def parse_api_request_events(raw: bytes) -> Iterable[dict[str, Any]]:
                     "billed_tokens": billed_tokens,
                     "cost_usd": cost_usd,
                     "request_id": request_id,
+                    "model": model,
                     "occurred_at": occurred_at,
                 }
