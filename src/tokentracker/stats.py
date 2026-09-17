@@ -34,7 +34,7 @@ from typing import Awaitable, Callable
 # strings look like "claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5",
 # and we want new minor versions to slot in without code changes. Anything that
 # matches none falls into "other" and isn't surfaced in the UI.
-MODEL_FAMILIES = ("opus", "sonnet", "haiku")
+MODEL_FAMILIES = ("opus", "sonnet", "haiku", "fable")
 MODEL_FAMILY_PATTERNS = {f: f"%{f}%" for f in MODEL_FAMILIES}
 
 LEADERBOARD_LIMIT = 100
@@ -73,6 +73,7 @@ async def fetch_totals(cur) -> dict:
                 WHEN model ILIKE %s THEN 'opus'
                 WHEN model ILIKE %s THEN 'sonnet'
                 WHEN model ILIKE %s THEN 'haiku'
+                WHEN model ILIKE %s THEN 'fable'
                 ELSE 'other'
             END                                     AS family,
             COALESCE(sum(cost_usd), 0)::float       AS cost_usd,
@@ -86,6 +87,7 @@ async def fetch_totals(cur) -> dict:
             MODEL_FAMILY_PATTERNS["opus"],
             MODEL_FAMILY_PATTERNS["sonnet"],
             MODEL_FAMILY_PATTERNS["haiku"],
+            MODEL_FAMILY_PATTERNS["fable"],
         ),
     )
     model_rows = await cur.fetchall()

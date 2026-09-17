@@ -22,7 +22,7 @@ from tokentracker.stats import MAX_CLIENTS, SnapshotBuilder, StatsHub
 # ---------------------------------------------------------------------------
 # A cursor that returns scripted results per query, so we can drive the real
 # build_snapshot query helpers (the conftest FakeCursor returns one fixed row
-# for every fetch, which can't represent totals + four distinct boards).
+# for every fetch, which can't represent totals + five distinct boards).
 # ---------------------------------------------------------------------------
 
 
@@ -88,7 +88,7 @@ def _board_rows(n=2):
 
 
 def _full_cursor():
-    # fetchone: totals. fetchall (in order): by_model, all, opus, sonnet, haiku.
+    # fetchone: totals. fetchall (in order): by_model, all, opus, sonnet, haiku, fable.
     return ScriptedCursor(
         fetchone_rows=[_totals_row()],
         fetchall_rows=[
@@ -97,6 +97,7 @@ def _full_cursor():
             _board_rows(),  # opus
             _board_rows(),  # sonnet
             _board_rows(),  # haiku
+            _board_rows(),  # fable
         ],
     )
 
@@ -172,7 +173,9 @@ async def test_builder_shape_and_leaderboard_caching():
     assert set(snap) == {"totals", "leaderboards"}
     assert snap["totals"]["total_users"] == 3
     assert snap["totals"]["by_model"]["opus"]["cost_usd"] == 8.0
-    assert set(snap["leaderboards"]) == {"all", "opus", "sonnet", "haiku"}
+    assert set(snap["leaderboards"]) == {"all", "opus", "sonnet", "haiku", "fable"}
+    assert snap["totals"]["by_model"]["fable"] == {"cost_usd": 0.0, "billed_tokens": 0, "requests": 0}
+    assert snap["leaderboards"]["fable"][0]["rank"] == 1
     assert snap["leaderboards"]["all"][0]["rank"] == 1
 
     # Ticks 2 and 3 reuse the cached boards (only the cheap totals query runs);

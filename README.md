@@ -49,7 +49,7 @@ Restart Claude Code. Events flow within ~5s. (Prefer to edit by hand? Paste just
 - `GET /` — the SPA
 - `GET /stats/claude/totals` — aggregate spend + counts
 - `GET /stats/claude/leaderboard?limit=100` — ranked by cost, handles only
-- `GET /stats/claude/stream` — Server-Sent Events; pushes a combined snapshot (totals + all four leaderboards) live to the dashboard. One shared snapshot is computed per interval and fanned out to every viewer, so database load is independent of audience size. The refresh loop only runs while at least one client is connected. The `/stats/claude/totals` and `/stats/claude/leaderboard` endpoints above remain for instant first paint and as the SSE-less fallback.
+- `GET /stats/claude/stream` — Server-Sent Events; pushes a combined snapshot (totals + all five leaderboards) live to the dashboard. One shared snapshot is computed per interval and fanned out to every viewer, so database load is independent of audience size. The refresh loop only runs while at least one client is connected. The `/stats/claude/totals` and `/stats/claude/leaderboard` endpoints above remain for instant first paint and as the SSE-less fallback.
 - `GET /healthz`
 
 **Web session cookie (HttpOnly):**

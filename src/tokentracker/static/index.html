@@ -49,6 +49,7 @@
         <div class="combined-label">combined spend across everyone tracked</div>
         <div id="totals-cost" class="hero-number">$0.00</div>
         <div class="model-breakdown">
+          <div class="model-stat"><div class="m-label">fable</div><div id="totals-fable" class="m-cost">$0.00</div></div>
           <div class="model-stat"><div class="m-label">opus</div><div id="totals-opus" class="m-cost">$0.00</div></div>
           <div class="model-stat"><div class="m-label">sonnet</div><div id="totals-sonnet" class="m-cost">$0.00</div></div>
           <div class="model-stat"><div class="m-label">haiku</div><div id="totals-haiku" class="m-cost">$0.00</div></div>
@@ -71,6 +72,7 @@
       </div>
       <div class="model-tabs" id="board-tabs" role="tablist" aria-label="filter leaderboard by model family">
         <button class="model-tab active" type="button" role="tab" data-model="">all</button>
+        <button class="model-tab" type="button" role="tab" data-model="fable">fable</button>
         <button class="model-tab" type="button" role="tab" data-model="opus">opus</button>
         <button class="model-tab" type="button" role="tab" data-model="sonnet">sonnet</button>
         <button class="model-tab" type="button" role="tab" data-model="haiku">haiku</button>
@@ -468,6 +470,7 @@
     const tickOpus = usdTicker($('totals-opus'));
     const tickSonnet = usdTicker($('totals-sonnet'));
     const tickHaiku = usdTicker($('totals-haiku'));
+    const tickFable = usdTicker($('totals-fable'));
     const applyTotals = (d) => {
       if (!d) return;
       tickCost(Number(d.total_cost_usd || 0));
@@ -478,6 +481,7 @@
       tickOpus(Number((bm.opus && bm.opus.cost_usd) || 0));
       tickSonnet(Number((bm.sonnet && bm.sonnet.cost_usd) || 0));
       tickHaiku(Number((bm.haiku && bm.haiku.cost_usd) || 0));
+      tickFable(Number((bm.fable && bm.fable.cost_usd) || 0));
     };
     if ('EventSource' in window) {
       // One-shot fetch for instant paint, then live pushes over SSE.
