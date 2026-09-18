@@ -36,7 +36,10 @@ from .security import (
     verify_password_safe,
 )
 
+from .codex_routes import router as codex_router
+
 router = APIRouter()
+router.include_router(codex_router)
 
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_\-]{2,32}$")
 # Permissive on purpose: real validation is "an SMTP server accepts it",

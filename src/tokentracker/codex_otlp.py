@@ -1,115 +1,125 @@
-"""Codex OTLP parser.
+"""Parse only completed Codex usage records, never prompt/tool content.
 
-Codex CLI emits OpenTelemetry log records via `SessionTelemetry` in the
-openai/codex repo. We accept and store exactly one event type:
-
-    event.name = "codex.sse_event"  AND  event.kind = "response.completed"
-
-This event carries the per-response token counts. All other Codex events
-(codex.api_request, codex.user_prompt, codex.tool_result, codex.sse_event
-with non-completed kinds, ...) carry HTTP/auth metadata or prompt/tool
-content and must never be persisted — the event filter is both a usefulness
-gate and a content-leak guard.
-
-Model and conversation.id come from session-level attributes auto-attached
-to every log record via Codex's `log_event!` macro (events/shared.rs).
+Telemetry reference: https://learn.chatgpt.com/docs/config-file/config-advanced
+WebSocket completion is accepted only with explicit input/output counts; the
+public docs do not guarantee those counts on every WebSocket event/version.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+import math
+import re
 from typing import Any, Iterable
 
-from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
-    ExportLogsServiceRequest,
-)
-from opentelemetry.proto.common.v1.common_pb2 import AnyValue
+from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
 
-# Token columns are INTEGER (32-bit) in Postgres. Clamp below 2^31 with
-# headroom so a buggy value can't blow up the whole executemany batch.
 _TOKEN_MAX = 2_000_000_000
-
-
-def _any_to_python(v: AnyValue) -> Any:
-    which = v.WhichOneof("value")
-    if which is None:
-        return None
-    if which == "array_value":
-        return [_any_to_python(i) for i in v.array_value.values]
-    if which == "kvlist_value":
-        return {kv.key: _any_to_python(kv.value) for kv in v.kvlist_value.values}
-    return getattr(v, which)
+_FIELDS = frozenset({
+    'event.name', 'event.kind', 'model', 'conversation.id', 'response.id', 'response_id',
+    'input_token_count', 'output_token_count', 'cached_token_count',
+    'reasoning_token_count', 'tool_token_count', 'cache_write_token_count',
+})
+_MODEL = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}\Z')
 
 
 def _attrs_to_dict(kvs) -> dict[str, Any]:
-    return {kv.key: _any_to_python(kv.value) for kv in kvs}
+    # Do not even materialize bodies, nested attributes or unrelated content.
+    result = {}
+    for kv in kvs:
+        kind = kv.value.WhichOneof('value')
+        if kv.key in _FIELDS and kind in ('string_value', 'int_value', 'double_value', 'bool_value'):
+            result[kv.key] = getattr(kv.value, kind)
+    return result
 
 
 def _ns_to_datetime(ns: int) -> datetime | None:
     if not ns:
         return None
-    secs, rem = divmod(ns, 1_000_000_000)
-    return datetime.fromtimestamp(secs, tz=timezone.utc).replace(microsecond=rem // 1000)
-
-
-def _as_int(x: Any) -> int:
-    if x is None:
-        return 0
     try:
-        n = int(x)
-    except (TypeError, ValueError):
-        return 0
-    if n < 0:
-        return 0
-    if n > _TOKEN_MAX:
-        return _TOKEN_MAX
-    return n
-
-
-def _as_str(x: Any) -> str | None:
-    if x is None:
+        secs, rem = divmod(ns, 1_000_000_000)
+        result = datetime.fromtimestamp(secs, tz=timezone.utc).replace(microsecond=rem // 1000)
+        # Allow clock skew, but do not store corrupt timestamps centuries ahead.
+        if result > datetime.now(timezone.utc) + timedelta(days=1):
+            return None
+        return result
+    except (ValueError, OverflowError, OSError):
         return None
-    s = str(x).strip()
-    return s or None
+
+
+def _count(value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError('boolean token count')
+    if isinstance(value, str):
+        if not re.fullmatch(r'[0-9]{1,10}', value):
+            raise ValueError('invalid token count')
+        value = int(value)
+    if not isinstance(value, (int, float)) or not math.isfinite(value) or value != int(value):
+        raise ValueError('invalid token count')
+    if not 0 <= value <= _TOKEN_MAX:
+        raise ValueError('token count out of range')
+    return int(value)
+
+
+def _identifier(value: Any) -> str | None:
+    if isinstance(value, str) and value and len(value) <= 256 and '\x00' not in value:
+        return value
+    return None
 
 
 def parse_codex_response_events(raw: bytes) -> Iterable[dict[str, Any]]:
-    """Yield one dict per codex.sse_event response.completed log record."""
+    """Yield bounded usage metadata; malformed records are skipped independently.
+
+    Stable response IDs deduplicate re-exports. Otherwise use conversation and
+    the original nanosecond event timestamp, falling back to observed timestamp
+    for clients such as 0.154.0 that emit no event timestamp. Collector rewrites
+    of observed timestamps cannot be deduplicated without a stable response ID.
+    Trace/span alone is not an event identity: it may cover several responses.
+    """
     req = ExportLogsServiceRequest()
     req.ParseFromString(raw)
-
     for rl in req.resource_logs:
         resource_attrs = _attrs_to_dict(rl.resource.attributes)
         for sl in rl.scope_logs:
             for rec in sl.log_records:
                 attrs = {**resource_attrs, **_attrs_to_dict(rec.attributes)}
-                if attrs.get("event.name") != "codex.sse_event":
+                if attrs.get('event.name') not in ('codex.sse_event', 'codex.websocket_event'):
                     continue
-                if attrs.get("event.kind") != "response.completed":
+                if attrs.get('event.kind') != 'response.completed':
                     continue
-
-                # Dedup key: prefer trace_id:span_id from the envelope (both
-                # are bytes — empty when no trace context was active).
-                trace_id_hex = rec.trace_id.hex() if rec.trace_id else ""
-                span_id_hex = rec.span_id.hex() if rec.span_id else ""
-                if trace_id_hex and span_id_hex:
-                    dedup_key = f"{trace_id_hex}:{span_id_hex}"
+                try:
+                    input_tokens = _count(attrs.get('input_token_count'))
+                    output_tokens = _count(attrs.get('output_token_count'))
+                    cached = _count(attrs.get('cached_token_count', 0))
+                    writes = _count(attrs.get('cache_write_token_count', 0))
+                    reasoning = _count(attrs.get('reasoning_token_count', 0))
+                    tool = _count(attrs.get('tool_token_count', 0))
+                except ValueError:
+                    continue
+                if cached + writes > input_tokens or reasoning > output_tokens:
+                    continue
+                occurred_at = _ns_to_datetime(rec.time_unix_nano) or _ns_to_datetime(rec.observed_time_unix_nano)
+                if occurred_at is None:
+                    continue
+                response_id = _identifier(attrs.get('response.id')) or _identifier(attrs.get('response_id'))
+                if response_id:
+                    identity = ['response', response_id]
+                elif (nanos := rec.time_unix_nano or rec.observed_time_unix_nano) and (convo := _identifier(attrs.get('conversation.id'))):
+                    identity = ['conversation', convo, nanos]
+                elif nanos and rec.trace_id and rec.span_id:
+                    identity = ['trace', rec.trace_id.hex(), rec.span_id.hex(), nanos]
                 else:
-                    convo_id = _as_str(attrs.get("conversation.id"))
-                    nanos = rec.time_unix_nano
-                    if not convo_id or not nanos:
-                        # No usable dedup material — drop rather than risk
-                        # NULL-key insert collisions.
-                        continue
-                    dedup_key = f"{convo_id}:{nanos}"
-
+                    continue
+                # Fixed-size keys also keep arbitrary identifier strings out of storage.
+                dedup_key = 'codex:' + hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+                model = attrs.get('model')
                 yield {
-                    "model": _as_str(attrs.get("model")),
-                    "input_tokens": _as_int(attrs.get("input_token_count")),
-                    "output_tokens": _as_int(attrs.get("output_token_count")),
-                    "cached_input_tokens": _as_int(attrs.get("cached_token_count")),
-                    "reasoning_output_tokens": _as_int(attrs.get("reasoning_token_count")),
-                    "tool_tokens": _as_int(attrs.get("tool_token_count")),
-                    "dedup_key": dedup_key,
-                    "occurred_at": (
-                        _ns_to_datetime(rec.time_unix_nano)
-                        or _ns_to_datetime(rec.observed_time_unix_nano)
-                    ),
+                    'model': model if isinstance(model, str) and _MODEL.fullmatch(model) else None,
+                    'input_tokens': input_tokens,
+                    'output_tokens': output_tokens,
+                    'cached_input_tokens': cached,
+                    'cache_write_tokens': writes,
+                    'reasoning_output_tokens': reasoning,
+                    'tool_tokens': tool,
+                    'dedup_key': dedup_key,
+                    'occurred_at': occurred_at,
                 }

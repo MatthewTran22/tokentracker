@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/style.css?v=codex-1">
 </head>
 <body>
 
@@ -42,11 +42,14 @@
     <div class="nav-links" id="nav"></div>
   </nav>
 
+  <nav id="provider-nav" class="provider-nav" aria-label="provider"></nav>
   <main>
     <!-- Home = public totals -->
     <section id="view-home" class="page hidden">
-      <div class="hero">
-        <div class="combined-label">combined spend across everyone tracked</div>
+      <div class="provider-totals">
+      <div class="hero provider-total">
+        <h1 class="provider-title">Claude Code</h1>
+        <div class="combined-label">community API-equivalent estimate</div>
         <div id="totals-cost" class="hero-number">$0.00</div>
         <div class="model-breakdown">
           <div class="model-stat"><div class="m-label">fable</div><div id="totals-fable" class="m-cost">$0.00</div></div>
@@ -59,9 +62,25 @@
           <div class="stat"><div id="totals-requests" class="n">0</div><div class="l">requests</div></div>
           <div class="stat"><div id="totals-users" class="n">0</div><div class="l">users</div></div>
         </div>
-        <div class="cta-row" id="home-ctas" style="margin-top: 44px; margin-bottom: 0;"></div>
-        <div class="disclaimer">numbers are self-reported from each user's Claude Code telemetry. spoofing is possible — treat rankings as vibes, not truth.</div>
+        <a class="btn btn-ghost" href="#/leaderboard">Claude leaderboard</a>
       </div>
+      <div class="hero provider-total codex-total">
+        <h2 class="provider-title">Codex</h2>
+        <div class="combined-label">community API-equivalent estimate</div>
+        <div id="codex-total-cost" class="hero-number">—</div>
+        <div id="codex-total-models" class="model-breakdown"><p>waiting for usage…</p></div>
+        <div class="stat-row">
+          <div class="stat"><div id="codex-total-tokens" class="n">—</div><div class="l">total tokens</div></div>
+          <div class="stat"><div id="codex-total-requests" class="n">—</div><div class="l">requests</div></div>
+          <div class="stat"><div id="codex-total-users" class="n">—</div><div class="l">users</div></div>
+        </div>
+        <p id="codex-total-unpriced" class="pricing-note"></p>
+        <p id="codex-total-status" class="fetch-status" role="status">loading Codex totals…</p>
+        <a class="btn btn-ghost" href="#/codex/leaderboard">Codex leaderboard</a>
+      </div>
+      </div>
+      <div class="cta-row home-ctas" id="home-ctas"></div>
+      <div class="disclaimer">API-equivalent estimates, not subscription charges. Usage is self-reported from Claude Code and Codex telemetry. Treat rankings as vibes, not truth. Unpriced Codex requests are excluded from dollar estimates.</div>
     </section>
 
     <!-- Leaderboard (public) -->
@@ -155,7 +174,8 @@
         <div class="cta-row" style="justify-content: flex-start; margin-bottom: 0; margin-top: 0.75rem;">
           <button class="btn btn-ghost" id="reg-copy" type="button">copy token</button>
           <button class="btn btn-primary" id="reg-copy-snippet" type="button">copy prompt</button>
-          <a class="btn btn-ghost" href="#/me">continue to dashboard</a>
+          <a class="btn btn-ghost" href="#/me">Claude dashboard</a>
+          <a class="btn btn-ghost" href="#/codex/me">connect Codex</a>
         </div>
       </div>
     </section>
@@ -264,7 +284,7 @@
       <div id="cp-ok" class="hidden" style="text-align: right; max-width: 900px; margin: 0.25rem auto 0; padding: 0 16px; font-family: var(--mono); font-size: 12px; color: var(--green);">password updated · other sessions signed out</div>
 
       <div class="hero" style="margin-top: 1.5rem;">
-        <div class="combined-label">your equivalent api spend</div>
+        <div class="combined-label">your Claude API-equivalent estimate</div>
         <div id="me-cost" class="hero-number sm">$0.00</div>
         <div class="stat-row">
           <div class="stat"><div id="me-tokens" class="n">0</div><div class="l">billed tokens</div></div>
@@ -292,6 +312,65 @@
         </div>
       </div>
     </section>
+
+    <section id="view-codex-leaderboard" class="page hidden">
+      <div class="hero">
+        <h1 class="hero-title">Codex leaderboard</h1>
+        <p class="disclaimer">Ranked by API-equivalent estimates, not subscription charges. Self-reported usage. Unpriced requests are excluded from estimates.</p>
+      </div>
+      <div class="codex-filter"><label for="codex-board-model">model</label><select id="codex-board-model"><option value="">all models</option></select></div>
+      <p id="codex-board-status" class="fetch-status" role="status">loading leaderboard…</p>
+      <div class="board-wrap codex-board-wrap"><table class="board">
+        <thead><tr><th>#</th><th>handle</th><th class="num">estimate</th><th class="num">tokens</th><th class="num">requests</th><th class="num">unpriced</th></tr></thead>
+        <tbody id="codex-board-body"><tr><td colspan="6" class="empty">loading…</td></tr></tbody>
+      </table></div>
+    </section>
+
+    <section id="view-codex-me" class="page hidden">
+      <div class="hero">
+        <h1 class="hero-title">your Codex dashboard</h1>
+        <p class="provider-account">signed in as <strong id="codex-me-handle"></strong> · <a href="#/me">account settings</a></p>
+        <div class="combined-label">your API-equivalent estimate</div>
+        <div id="codex-me-cost" class="hero-number sm">—</div>
+        <div class="stat-row">
+          <div class="stat"><div id="codex-me-tokens" class="n">—</div><div class="l">total tokens</div></div>
+          <div class="stat"><div id="codex-me-requests" class="n">—</div><div class="l">requests</div></div>
+        </div>
+        <p id="codex-me-unpriced" class="pricing-note"></p>
+        <p id="codex-me-status" class="fetch-status" role="status">loading usage…</p>
+        <div id="codex-me-models" class="model-breakdown"></div>
+        <p class="disclaimer">These are API-equivalent estimates, not subscription charges. Unpriced requests still count toward usage.</p>
+      </div>
+      <div class="tokens-section">
+        <h3>connect Codex</h3>
+        <p>Your account is shared with Claude. Codex uses its own ingest token. Creating or rotating it immediately replaces any previous Codex token.</p>
+        <button class="btn btn-primary" id="codex-rotate" type="button">create / rotate Codex token</button>
+        <p id="codex-token-status" class="fetch-status" role="status"></p>
+        <div id="codex-token-wrap" class="hidden">
+          <div class="label">Codex ingest token — save it now</div>
+          <div id="codex-token" class="token-display"></div>
+          <div class="cta-row compact-ctas"><button class="btn btn-ghost" id="codex-copy-token" type="button">copy token</button></div>
+          <p>Merge this into your user-level <code>~/.codex/config.toml</code> (Windows: <code>%USERPROFILE%\.codex\config.toml</code>). If an <code>[otel]</code> section already exists, update its keys instead of adding a second section. Preserve your other settings, then restart Codex.</p>
+          <pre id="codex-snippet" class="token-display"></pre>
+          <button class="btn btn-primary" id="codex-copy-config" type="button">copy config</button>
+          <div class="warn-banner">Shown once. Copy before navigating away. This sends usage metadata; prompt logging is disabled.</div>
+        </div>
+        <p class="setup-link"><a href="#/codex/setup">read the Codex setup guide</a></p>
+      </div>
+    </section>
+
+    <section id="view-codex-setup" class="page hidden">
+      <div class="hero"><h1 class="hero-title">wire up Codex</h1></div>
+      <div class="card wide">
+        <h2>one account, separate tokens</h2>
+        <p class="sub">Create a Codex ingest token in your <a href="#/codex/me">Codex dashboard</a>. Your Claude token won't work for Codex.</p>
+        <p class="sub">Merge the configuration below into your user-level <code>~/.codex/config.toml</code> (Windows: <code>%USERPROFILE%\.codex\config.toml</code>). Preserve existing settings. If <code>[otel]</code> already exists, edit that section instead of duplicating it.</p>
+        <pre id="codex-setup-snippet" class="token-display"></pre>
+        <button class="btn btn-primary" id="codex-setup-copy" type="button">copy config</button>
+        <div class="warn-banner">Replace the token placeholder with your Codex token, then restart Codex. Use Codex to generate a response; telemetry appears after it exports. Prompt logging stays disabled.</div>
+        <a class="btn btn-ghost" href="#/codex/me">open Codex dashboard</a>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -314,6 +393,7 @@
     userId: null,
     username: null,
     pollers: [],
+    viewVersion: 0,
     rafs: [],
     // Live stats over Server-Sent Events. One shared connection feeds whichever
     // view is active; statsHandlers holds the active view's snapshot callbacks.
@@ -370,7 +450,20 @@
     return r.json();
   }
 
+  function resetCodexPrivateView() {
+    $('codex-me-handle').textContent = '';
+    for (const field of ['cost', 'tokens', 'requests']) $('codex-me-' + field).textContent = '—';
+    $('codex-me-models').innerHTML = '';
+    $('codex-me-unpriced').textContent = '';
+    $('codex-me-status').textContent = 'loading Codex usage…';
+  }
+
   function clearPollers() {
+    state.viewVersion++;
+    // Drop rendered personal data immediately, including before logout completes.
+    resetCodexPrivateView();
+    for (const id of ["codex-token", "codex-snippet"]) $(id).textContent = "";
+    $("codex-token-wrap").classList.add("hidden");
     state.pollers.forEach(clearInterval);
     state.pollers = [];
     state.rafs.forEach(cancelAnimationFrame);
@@ -433,7 +526,10 @@
       await navigator.clipboard.writeText(text);
       btn.textContent = done;
       setTimeout(() => btn.textContent = orig, 1500);
-    } catch { /* ignore */ }
+    } catch {
+      btn.textContent = 'select text to copy';
+      setTimeout(() => btn.textContent = orig, 2500);
+    }
   }
 
   function buildSettingsSnippet(token) {
@@ -453,6 +549,133 @@
     ].join('\n');
   }
 
+  function buildCodexConfig(token) {
+    return '[otel]\nlog_user_prompt = false\nexporter = { otlp-http = { endpoint = '
+      + JSON.stringify(location.origin + '/codex/v1/logs')
+      + ', protocol = "binary", headers = { "Authorization" = '
+      + JSON.stringify('Bearer ' + token) + ' } } }';
+  }
+
+  function codexPrice(cost, requests, unpriced) {
+    return Number(requests) > 0 && Number(unpriced) >= Number(requests)
+      ? 'unpriced' : fmtUsd.format(Number(cost || 0));
+  }
+
+  const codexModelLabels = {
+    'gpt-6-astra': 'astra', 'gpt-5.6-sol': 'sol',
+    'gpt-5.6-terra': 'terra', 'gpt-5.6-luna': 'luna',
+  };
+
+  function codexModelCards(models) {
+    const entries = Object.entries(models || {});
+    return entries.length ? entries.map(([name, m]) => `<div class="model-stat">
+      <div class="m-label" title="${escapeHtml(name)}">${escapeHtml(codexModelLabels[name] || name)}</div>
+      <div class="m-cost">${codexPrice(m.cost_usd, m.requests, m.unpriced_requests)}</div>
+    </div>`).join('') : '<p class="empty-models">No Codex usage yet. Connect Codex to start tracking.</p>';
+  }
+
+  function pollCodexTotals(url, prefix) {
+    const version = state.viewVersion;
+    let pending = false;
+    $(prefix + '-status').textContent = 'loading Codex usage…';
+    poll(async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const d = await fetchJson(url);
+        if (version !== state.viewVersion) return;
+        $(prefix + '-cost').textContent = codexPrice(d.total_cost_usd, d.total_requests, d.unpriced_requests);
+        $(prefix + '-tokens').textContent = fmtInt.format(d.total_tokens || 0);
+        $(prefix + '-requests').textContent = fmtInt.format(d.total_requests || 0);
+        if ($(prefix + '-users')) $(prefix + '-users').textContent = fmtInt.format(d.total_users || 0);
+        $(prefix + '-models').innerHTML = codexModelCards(d.by_model);
+        $(prefix + '-unpriced').textContent = d.unpriced_requests
+          ? fmtInt.format(d.unpriced_requests) + ' unpriced requests · excluded from dollar estimates' : '';
+        $(prefix + '-status').textContent = '';
+      } catch (e) {
+        if (version !== state.viewVersion) return;
+        if (e.status === 401 && prefix === 'codex-me') { state.loggedIn = false; location.hash = '#/login'; return; }
+        $(prefix + '-status').textContent = 'Could not refresh Codex usage. Retrying automatically.';
+      } finally { pending = false; }
+    }, POLL_MS);
+  }
+
+  function renderCodexMe() {
+    // A new account or failed fetch must never inherit the previous user's figures.
+    resetCodexPrivateView();
+    if (!state.loggedIn) { location.hash = '#/login?next=codex'; return; }
+    showOnly('view-codex-me');
+    $('codex-me-handle').textContent = state.username || 'your account';
+    $('codex-token-status').textContent = '';
+    pollCodexTotals('/usage/me/codex', 'codex-me');
+  }
+
+  function renderCodexSetup() {
+    showOnly('view-codex-setup');
+    $('codex-setup-snippet').textContent = buildCodexConfig('<your-codex-ingest-token>');
+  }
+
+  function renderCodexLeaderboard() {
+    showOnly('view-codex-leaderboard');
+    const version = state.viewVersion;
+    const select = $('codex-board-model');
+    select.innerHTML = '<option value="">all models</option>';
+    const body = $('codex-board-body');
+    body.innerHTML = '<tr><td colspan="6" class="empty">loading…</td></tr>';
+    let requestId = 0;
+    let pending = false;
+    const refresh = async (force = false) => {
+      if (pending && !force) return;
+      pending = true;
+      const id = ++requestId;
+      const model = select.value;
+      try {
+        const [d, totals] = await Promise.all([
+          fetchJson('/stats/codex/leaderboard' + (model ? '?model=' + encodeURIComponent(model) : '')),
+          fetchJson('/stats/codex/totals'),
+        ]);
+        if (version !== state.viewVersion || id !== requestId) return;
+        const models = Array.from(new Set([...Object.keys(totals.by_model || {}), ...(model ? [model] : [])]));
+        select.innerHTML = '<option value="">all models</option>' + models.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+        select.value = model;
+        body.innerHTML = (d.rows || []).length ? d.rows.map(r => `<tr class="${r.username === state.username ? 'me' : ''}">
+          <td class="rank">${fmtInt.format(r.rank)}</td><td>${escapeHtml(r.username || r.handle || '')}</td>
+          <td class="num">${codexPrice(r.cost_usd, r.requests, r.unpriced_requests)}</td>
+          <td class="num">${fmtInt.format(r.total_tokens || 0)}</td><td class="num">${fmtInt.format(r.requests || 0)}</td>
+          <td class="num">${fmtInt.format(r.unpriced_requests || 0)}</td></tr>`).join('')
+          : '<tr><td colspan="6" class="empty">no Codex usage for this selection yet</td></tr>';
+        $('codex-board-status').textContent = '';
+      } catch {
+        if (version === state.viewVersion && id === requestId) $('codex-board-status').textContent = 'Could not refresh the leaderboard. Retrying automatically.';
+      } finally { if (id === requestId) pending = false; }
+    };
+    select.onchange = () => { $('codex-board-status').textContent = 'loading selected model…'; refresh(true); };
+    poll(refresh, POLL_MS);
+  }
+
+  $('codex-rotate').addEventListener('click', async () => {
+    if (!confirm('Create a new Codex token? Any previous Codex token stops working immediately. Update your config and restart Codex afterward.')) return;
+    const btn = $('codex-rotate');
+    const version = state.viewVersion;
+    btn.disabled = true;
+    $('codex-token-status').textContent = 'creating Codex token…';
+    try {
+      const d = await fetchJson('/me/codex-ingest-token/rotate', { method: 'POST' });
+      if (version !== state.viewVersion) return;
+      $('codex-token').textContent = d.ingest_token;
+      $('codex-snippet').textContent = buildCodexConfig(d.ingest_token);
+      $('codex-token-wrap').classList.remove('hidden');
+      $('codex-token-status').textContent = 'Token created. Save it and update your config below.';
+    } catch (e) {
+      if (version === state.viewVersion) $('codex-token-status').textContent = 'Could not create token: ' + e.message;
+    } finally { btn.disabled = false; }
+  });
+  for (const [button, source, label] of [
+    ['codex-copy-token', 'codex-token', 'copy token'],
+    ['codex-copy-config', 'codex-snippet', 'copy config'],
+    ['codex-setup-copy', 'codex-setup-snippet', 'copy config'],
+  ]) $(button).addEventListener('click', () => copy($(source).textContent, $(button), 'copied ✓', label));
+
   // --- views ---
   function renderHome() {
     showOnly('view-home');
@@ -463,6 +686,7 @@
       : '<a class="btn btn-primary" href="#/register">create an account</a>'
       + '<a class="btn btn-ghost" href="#/login">log in</a>'
       + '<a class="btn btn-ghost" href="#/leaderboard">view leaderboard</a>';
+    pollCodexTotals('/stats/codex/totals', 'codex-total');
     const tickCost = usdTicker($('totals-cost'));
     const tickTokens = intTicker($('totals-tokens'));
     const tickRequests = intTicker($('totals-requests'));
@@ -660,6 +884,9 @@
     '/forgot':     renderForgot,
     '/reset':      renderReset,
     '/me':         renderMe,
+    '/codex/me': renderCodexMe,
+    '/codex/leaderboard': renderCodexLeaderboard,
+    '/codex/setup': renderCodexSetup,
   };
 
   function renderNav() {
@@ -680,6 +907,15 @@
           { href: '#/register',    label: 'register', cta: true },
         ];
     const path = (location.hash.slice(1).split('?')[0]) || '/';
+    const isCodex = path.startsWith('/codex/');
+    const mode = path.endsWith('/me') ? 'me' : path.endsWith('/setup') ? 'setup' : 'leaderboard';
+    $('provider-nav').innerHTML = ['Claude Code', 'Codex'].map((name, i) => {
+      const selected = path !== '/' && path !== '/totals' && isCodex === Boolean(i);
+      return `<a class="model-tab ${selected ? 'active' : ''}" ${selected ? 'aria-current="page"' : ''} href="#/${i ? 'codex/' : ''}${mode}">${name}</a>`;
+    }).join('');
+    if (isCodex) for (const l of links) {
+      if (['#/leaderboard', '#/me', '#/setup'].includes(l.href)) l.href = l.href.replace('#/', '#/codex/');
+    }
     nav.innerHTML = links.map(l => {
       const active = l.href === '#' + path;
       const cls = ['nav-link'];
@@ -734,7 +970,7 @@
       state.userId = d.user_id;
       state.username = d.username;
       renderNav();
-      location.hash = '#/me';
+      location.hash = location.hash.includes('next=codex') ? '#/codex/me' : '#/me';
     } catch (err) {
       $('login-err').textContent = err.status === 401 ? 'invalid username or password' : (err.message || 'login failed');
     }

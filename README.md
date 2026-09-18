@@ -1,6 +1,8 @@
 # tokentracker
 
-OTLP ingest server + public dashboard for Claude Code usage data.
+OTLP ingest server + public dashboards for Claude Code and Codex usage data.
+
+The homepage shows both providers. Accounts are shared; dashboards, leaderboards, and ingest tokens are separate.
 
 ## Auth model
 
@@ -71,6 +73,62 @@ Restart Claude Code. Events flow within ~5s. (Prefer to edit by hand? Paste just
 **Ingest Bearer token (Claude Code only):**
 - `POST /v1/logs` — OTLP/protobuf logs; only `claude_code.api_request` records are stored
 - `POST /v1/metrics` — stub that accepts and discards
+
+## Connect Codex
+
+1. Register or sign in with your existing account, select **Codex → dashboard**, and create a Codex ingest token.
+2. Copy the generated configuration into your user-level `~/.codex/config.toml` (Windows: `%USERPROFILE%\.codex\config.toml`). Merge the existing `[otel]` section; do not overwrite unrelated settings or add duplicate sections.
+3. Restart Codex, generate a response, and wait for telemetry to export. The configuration works with clients supporting the documented OTel exporter; CLI `0.154.0-alpha.6.2` was verified locally. Desktop export requires the app to load that configuration after restart.
+
+```toml
+[otel]
+log_user_prompt = false
+exporter = { otlp-http = { endpoint = "http://localhost:8000/codex/v1/logs", protocol = "binary", headers = { "Authorization" = "Bearer <your-codex-ingest-token>" } } }
+```
+
+Use the deployed HTTPS origin when tracking against production. A local endpoint only receives telemetry from Codex running on that machine; cloud tasks need a reachable server. Tokens are shown once and stored only as hashes. Rotating the Codex token does not change Claude's token.
+
+If Codex returns HTTP 401 while the token works directly, check inherited `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_LOGS_HEADERS`: exporter environment headers can override the TOML token. Launch Codex without conflicting OTel variables (for example, `env -u OTEL_EXPORTER_OTLP_HEADERS -u OTEL_EXPORTER_OTLP_LOGS_HEADERS codex` on macOS/Linux). Keep other tools’ telemetry configuration intact.
+
+The exporter may send other event metadata, including tool-result snippets. TokenTracker discards non-usage events and persists only allowlisted usage fields, model, hashed dedup key, and timestamps. `log_user_prompt = false` keeps prompt logging disabled. Do not enable HTTP request-body logging at a proxy in front of ingestion.
+
+### Codex usage and estimates
+
+- Total tokens = input + output. Cached input, cache writes, and reasoning are subsets, never added again.
+- Dollar amounts estimate **standard API-equivalent cost**, not ChatGPT subscription charges. Rates and sources are recorded in `codex_pricing.py` (verified 2026-09-17). Service tiers, regional premiums, and hosted-tool fees are not included. GPT-5.4/5.5 long-context session premiums are approximated per response; newer supported models use request-level thresholds.
+- Unknown models retain tokens and requests with a null cost. The UI reports unpriced requests and excludes them from dollar estimates. Adding a rate affects new ingested events; it does not retroactively reprice stored events.
+- Retry deduplication prefers a response ID, then conversation + event timestamp (or observed timestamp on the verified client). Identical retries count once. A collector that regenerates observed timestamps cannot guarantee deduplication without a stable response ID.
+- Global totals/leaderboards share a bounded two-second cache. Personal usage is session-protected; public output contains handles and aggregate usage only.
+
+### Codex endpoints
+
+- `POST /me/codex-ingest-token/rotate` — session-authenticated create/rotate; returns `ingest_token` once.
+- `POST /codex/v1/logs` — Codex Bearer token + `application/x-protobuf`; usage-only OTLP ingestion.
+- `GET /usage/me/codex` — session-authenticated personal totals and model breakdown.
+- `GET /stats/codex/totals` — public totals and model breakdown, including unpriced request counts.
+- `GET /stats/codex/leaderboard?model=<exact-model-id>&limit=100` — public Codex ranking; omit model for all usage. The `unknown` model bucket includes missing model identifiers.
+
+Browser routes are `#/codex/me`, `#/codex/leaderboard`, and `#/codex/setup`. Existing Claude URLs remain compatible.
+
+### Existing installations
+
+Apply all idempotent SQL migrations before starting the new app, including `003_codex.sql` and `005_codex_cache_write.sql`. The GitHub deploy workflow already does this. Docker's initialization mount only applies migrations on a fresh volume; for an existing local volume run:
+
+```bash
+for f in sql/*.sql; do
+  docker compose exec -T db psql -v ON_ERROR_STOP=1 -U tokentracker -d tokentracker < "$f"
+done
+```
+
+### Integration test
+
+The normal Python test suite needs no database. Run `node --test tests/test_frontend_session.cjs` for the account-switching UI regression. CI runs both suites and supplies Postgres for the integration test. To exercise real auth, ingestion, retries, pricing, filters, provider isolation, and token rotation, use a **local test database**:
+
+```bash
+TT_TEST_DATABASE_URL=postgresql://tokentracker:dev@127.0.0.1:5432/tokentracker uv run pytest tests/test_codex_integration.py -q
+```
+
+The test creates and removes its own unique schema; existing application tables are untouched. A different mapped Postgres port can be used.
 
 ## Deploying
 

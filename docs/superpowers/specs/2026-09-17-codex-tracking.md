@@ -1,0 +1,3 @@
+# Codex tracking
+
+Approved scope: homepage shows Claude Code and Codex totals side by side. Shared accounts, separate provider dashboards and leaderboards, model breakdowns, and Codex connection instructions with an independent ingest token. Preserve Claude routes and data. Dollars are API-equivalent estimates, not subscription charges. Unknown models retain usage and visibly report unpriced requests. Store usage metadata only, reject malformed payloads, rate limit authenticated ingestion, and deduplicate retries. Verify with automated tests, a local Postgres integration exercise, browser checks, and actual Codex telemetry if the installed client permits it. No production deployment in this task.

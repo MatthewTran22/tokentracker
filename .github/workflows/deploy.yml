@@ -29,6 +29,20 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: tokentracker
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: tokentracker_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tokentracker -d tokentracker_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TT_TEST_DATABASE_URL: postgresql://tokentracker:test-only@localhost:5432/tokentracker_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -37,6 +51,7 @@ jobs:
           enable-cache: true
       - run: uv sync
       - run: uv run pytest
+      - run: node --test tests/test_frontend_session.cjs
 
   build-and-push:
     needs: test
